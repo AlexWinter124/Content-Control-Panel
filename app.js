@@ -166,7 +166,7 @@ els.generateBtn.addEventListener("click", async () => {
       throw new Error(`Workflow konnte nicht gestartet werden (HTTP ${dispatchRes.status})`);
     }
 
-    els.generateStatus.textContent = "Workflow laeuft (dauert i.d.R. 30-90s)...";
+    els.generateStatus.textContent = "Workflow laeuft (dauert i.d.R. 1-4 Minuten, mit Faktencheck)...";
     activeRunId = await findRunId(triggerTime);
 
     if (cancelRequested) return;
@@ -175,7 +175,7 @@ els.generateBtn.addEventListener("click", async () => {
     if (cancelRequested) return;
     if (!issue) {
       els.generateStatus.textContent =
-        "Kein Ergebnis nach 3 Minuten gefunden. Schau im Actions-Tab bzw. bei den Issues nach.";
+        "Kein Ergebnis nach 7 Minuten gefunden. Schau im Actions-Tab bzw. bei den Issues nach.";
       return;
     }
 
@@ -222,7 +222,7 @@ async function findRunId(sinceDate, maxWaitMs = 20000, intervalMs = 2000) {
   return null;
 }
 
-async function pollForNewIssue(sinceDate, maxWaitMs = 180000, intervalMs = 5000) {
+async function pollForNewIssue(sinceDate, maxWaitMs = 420000, intervalMs = 5000) {
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
     if (cancelRequested) return null;
