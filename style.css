@@ -225,6 +225,14 @@ input[type="password"], input[type="text"] {
   height: 100%;
 }
 
+/* Waehrend die Vorschau (mit Hochladen/Verwerfen-Buttons) angezeigt wird,
+   darf das unsichtbare Datei-Feld nicht mehr klickbar sein - sonst faengt
+   es Klicks auf die darunterliegenden Buttons ab und oeffnet stattdessen
+   wieder den Datei-Explorer. */
+.dz-input.dz-input-inactive {
+  pointer-events: none;
+}
+
 .dz-status {
   margin-top: 0.6rem;
   font-size: 0.85rem;

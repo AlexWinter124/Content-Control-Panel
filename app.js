@@ -317,6 +317,11 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
     previewVideo.src = "";
     previewBox.classList.add("hidden");
     input.value = "";
+    // Das unsichtbare Datei-Feld deckt per CSS die ganze Dropzone ab (damit
+    // man ueberall draufklicken kann) - das darf die Vorschau-Buttons nicht
+    // mehr ueberlagern, sonst oeffnet ein Klick auf "Hochladen"/"Verwerfen"
+    // wieder den Datei-Explorer statt den eigentlichen Button zu treffen.
+    input.classList.remove("dz-input-inactive");
   }
 
   function handleFile(file) {
@@ -326,6 +331,7 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
       objectUrl = URL.createObjectURL(file);
       previewVideo.src = objectUrl;
       previewBox.classList.remove("hidden");
+      input.classList.add("dz-input-inactive");
       status.className = "dz-status";
       status.textContent = "";
     } else {
