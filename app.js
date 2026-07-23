@@ -80,6 +80,21 @@ async function init() {
     return;
   }
   showMain();
+  // Zeigt IMMER das zuletzt erzeugte Prompt-Issue an, egal ob die Seite
+  // waehrend eines laufenden Generate-Vorgangs geschlossen/pausiert wurde
+  // (z.B. Handy-Browser im Hintergrund) - so geht das Ergebnis nie verloren.
+  loadLatestIssue();
+}
+
+async function loadLatestIssue() {
+  try {
+    const res = await ghFetch("/issues?labels=content-job&state=all&sort=created&direction=desc&per_page=1");
+    if (!res.ok) return;
+    const issues = await res.json();
+    if (issues.length > 0) renderPrompts(issues[0].body);
+  } catch {
+    // still, kein hartes Fehlverhalten - einfach nichts anzeigen
+  }
 }
 
 els.saveTokenBtn.addEventListener("click", async () => {
