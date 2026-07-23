@@ -14,6 +14,7 @@ const els = {
   chkBriefww2: document.getElementById("chkBriefww2"),
   chkUnspoken: document.getElementById("chkUnspoken"),
   generateBtn: document.getElementById("generateBtn"),
+  cancelGenerateBtn: document.getElementById("cancelGenerateBtn"),
   generateStatus: document.getElementById("generateStatus"),
   promptsCard: document.getElementById("promptsCard"),
   promptsContainer: document.getElementById("promptsContainer"),
@@ -132,6 +133,14 @@ function selectedChannels() {
   return null;
 }
 
+let activeRunId = null;
+let cancelRequested = false;
+
+function setGenerating(isGenerating) {
+  els.generateBtn.disabled = isGenerating;
+  els.cancelGenerateBtn.classList.toggle("hidden", !isGenerating);
+}
+
 els.generateBtn.addEventListener("click", async () => {
   const channels = selectedChannels();
   if (!channels) {
@@ -139,7 +148,9 @@ els.generateBtn.addEventListener("click", async () => {
     return;
   }
 
-  els.generateBtn.disabled = true;
+  cancelRequested = false;
+  activeRunId = null;
+  setGenerating(true);
   els.promptsCard.classList.add("hidden");
   els.promptsContainer.innerHTML = "";
   els.generateStatus.textContent = "Starte Workflow...";
@@ -156,8 +167,12 @@ els.generateBtn.addEventListener("click", async () => {
     }
 
     els.generateStatus.textContent = "Workflow laeuft (dauert i.d.R. 30-90s)...";
+    activeRunId = await findRunId(triggerTime);
+
+    if (cancelRequested) return;
     const issue = await pollForNewIssue(triggerTime);
 
+    if (cancelRequested) return;
     if (!issue) {
       els.generateStatus.textContent =
         "Kein Ergebnis nach 3 Minuten gefunden. Schau im Actions-Tab bzw. bei den Issues nach.";
@@ -167,15 +182,50 @@ els.generateBtn.addEventListener("click", async () => {
     els.generateStatus.textContent = "Fertig!";
     renderPrompts(issue.body);
   } catch (err) {
-    els.generateStatus.textContent = `Fehler: ${err.message}`;
+    if (!cancelRequested) els.generateStatus.textContent = `Fehler: ${err.message}`;
   } finally {
-    els.generateBtn.disabled = false;
+    if (!cancelRequested) setGenerating(false);
+    activeRunId = null;
   }
 });
+
+els.cancelGenerateBtn.addEventListener("click", async () => {
+  if (!confirm("Laufenden Content-Generierungsvorgang wirklich abbrechen?")) return;
+  cancelRequested = true;
+  els.generateStatus.textContent = "Breche ab...";
+
+  if (activeRunId) {
+    try {
+      await ghFetch(`/actions/runs/${activeRunId}/cancel`, { method: "POST" });
+    } catch {
+      // Workflow evtl. schon fertig/nicht mehr abbrechbar - trotzdem lokal zuruecksetzen
+    }
+  }
+
+  els.generateStatus.textContent = "Abgebrochen. Naechster Versuch startet komplett neu.";
+  setGenerating(false);
+  activeRunId = null;
+});
+
+async function findRunId(sinceDate, maxWaitMs = 20000, intervalMs = 2000) {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    if (cancelRequested) return null;
+    const res = await ghFetch("/actions/workflows/generate-content.yml/runs?event=workflow_dispatch&per_page=5");
+    if (res.ok) {
+      const data = await res.json();
+      const fresh = (data.workflow_runs || []).find((r) => new Date(r.created_at) >= sinceDate);
+      if (fresh) return fresh.id;
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return null;
+}
 
 async function pollForNewIssue(sinceDate, maxWaitMs = 180000, intervalMs = 5000) {
   const start = Date.now();
   while (Date.now() - start < maxWaitMs) {
+    if (cancelRequested) return null;
     const res = await ghFetch("/issues?labels=content-job&state=open&sort=created&direction=desc&per_page=5");
     if (res.ok) {
       const issues = await res.json();
