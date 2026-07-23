@@ -398,4 +398,124 @@ function fileToBase64(file) {
   });
 }
 
+// --- Tabs ---
+
+document.querySelectorAll(".tab-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach((p) => p.classList.add("hidden"));
+    btn.classList.add("active");
+    document.getElementById(btn.dataset.tab).classList.remove("hidden");
+    if (btn.dataset.tab === "tab-dashboard") loadDashboard();
+  });
+});
+
+// --- Dashboard / Kalender ---
+
+const CHANNEL_LABELS = { briefww2: "BriefWW2", unspoken_civilization: "Unspoken Civilization" };
+
+let allJobs = null; // Cache fuer die Dauer der Session
+let calendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+
+const calEls = {
+  monthLabel: document.getElementById("calMonthLabel"),
+  grid: document.getElementById("calendarGrid"),
+  prevBtn: document.getElementById("calPrevBtn"),
+  nextBtn: document.getElementById("calNextBtn"),
+  unscheduledList: document.getElementById("unscheduledList"),
+};
+
+calEls.prevBtn.addEventListener("click", () => {
+  calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1);
+  renderCalendar();
+});
+calEls.nextBtn.addEventListener("click", () => {
+  calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1);
+  renderCalendar();
+});
+
+async function loadDashboard() {
+  if (allJobs === null) {
+    calEls.unscheduledList.textContent = "Lade Jobs...";
+    allJobs = await fetchAllJobs();
+  }
+  renderCalendar();
+  renderUnscheduled();
+}
+
+async function fetchAllJobs() {
+  const listRes = await ghFetch("/contents/data/queue/pending");
+  if (!listRes.ok) return [];
+  const files = (await listRes.json()).filter((f) => f.name.endsWith(".json"));
+
+  const jobs = [];
+  for (const file of files) {
+    try {
+      const fileRes = await ghFetch(`/contents/${file.path}`);
+      if (!fileRes.ok) continue;
+      const data = await fileRes.json();
+      const content = JSON.parse(decodeURIComponent(escape(atob(data.content))));
+      jobs.push(content);
+    } catch {
+      // einzelne kaputte/unlesbare Datei ueberspringen, Rest trotzdem anzeigen
+    }
+  }
+  return jobs;
+}
+
+function renderCalendar() {
+  const year = calendarMonth.getFullYear();
+  const month = calendarMonth.getMonth();
+  calEls.monthLabel.textContent = calendarMonth.toLocaleDateString("de-DE", { month: "long", year: "numeric" });
+
+  const jobsByDay = {};
+  for (const job of allJobs || []) {
+    if (!job.publish_at) continue;
+    const d = new Date(job.publish_at);
+    if (d.getFullYear() !== year || d.getMonth() !== month) continue;
+    const key = d.getDate();
+    (jobsByDay[key] = jobsByDay[key] || []).push(job);
+  }
+
+  const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7; // Montag = 0
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const today = new Date();
+
+  let html = "";
+  ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].forEach((d) => {
+    html += `<div class="cal-weekday">${d}</div>`;
+  });
+  for (let i = 0; i < firstWeekday; i++) html += `<div class="cal-day empty"></div>`;
+
+  for (let day = 1; day <= daysInMonth; day++) {
+    const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
+    const jobsToday = jobsByDay[day] || [];
+    const dotsHtml = jobsToday
+      .map((j) => `<span class="cal-dot ${j.channel}${j.status !== "published" ? " dim" : ""}" title="${escapeHtml(j.channel)}: ${escapeHtml(j.topic)} (${escapeHtml(j.status)})"></span>`)
+      .join("");
+    html += `<div class="cal-day${isToday ? " today" : ""}">
+      <div class="cal-day-num">${day}</div>
+      <div class="cal-day-dots">${dotsHtml}</div>
+    </div>`;
+  }
+
+  calEls.grid.innerHTML = html;
+}
+
+function renderUnscheduled() {
+  const unscheduled = (allJobs || []).filter((j) => !j.publish_at);
+  if (unscheduled.length === 0) {
+    calEls.unscheduledList.textContent = "Alles eingeplant - nichts Offenes.";
+    return;
+  }
+  calEls.unscheduledList.innerHTML = unscheduled
+    .map(
+      (j) => `<div class="unscheduled-item">
+        <strong>${escapeHtml(CHANNEL_LABELS[j.channel] || j.channel)}</strong>: ${escapeHtml(j.topic)}
+        <span class="badge${j.status === "needs_review" ? " warn" : ""}">${escapeHtml(j.status)}</span>
+      </div>`
+    )
+    .join("");
+}
+
 init();

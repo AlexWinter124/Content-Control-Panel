@@ -9,6 +9,8 @@
   --error: #ff5c5c;
   --success: #4caf7d;
   --radius: 14px;
+  --ch-briefww2: #4d8dff;
+  --ch-unspoken: #d9455f;
 }
 
 @media (prefers-color-scheme: light) {
@@ -240,7 +242,7 @@ input[type="password"], input[type="text"] {
   font-size: 0.95rem;
 }
 
-.prompt-block .badge {
+.badge {
   display: inline-block;
   font-size: 0.72rem;
   padding: 0.15rem 0.5rem;
@@ -250,7 +252,7 @@ input[type="password"], input[type="text"] {
   margin-left: 0.4rem;
 }
 
-.prompt-block .badge.warn {
+.badge.warn {
   background: #4a3a10;
   color: var(--accent);
 }
@@ -274,3 +276,130 @@ input[type="password"], input[type="text"] {
   color: var(--text);
   cursor: pointer;
 }
+
+/* --- Tabs --- */
+
+.tabbar {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 0.7rem 0.5rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  color: var(--accent-text);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.tab-panel.hidden { display: none !important; }
+
+/* --- Kalender --- */
+
+.calendar-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.cal-month-label {
+  font-weight: 600;
+}
+
+.calendar-legend {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin-bottom: 0.75rem;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.legend-dot.briefww2 { background: var(--ch-briefww2); }
+.legend-dot.unspoken_civilization { background: var(--ch-unspoken); }
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.cal-weekday {
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  padding-bottom: 0.25rem;
+}
+
+.cal-day {
+  aspect-ratio: 1;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  padding: 0.25rem;
+  font-size: 0.75rem;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.cal-day.empty {
+  border: none;
+  visibility: hidden;
+}
+
+.cal-day.today {
+  border-color: var(--accent);
+}
+
+.cal-day-num {
+  color: var(--text-dim);
+}
+
+.cal-day-dots {
+  display: flex;
+  gap: 3px;
+  margin-top: auto;
+  margin-bottom: 2px;
+}
+
+.cal-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.cal-dot.briefww2 { background: var(--ch-briefww2); }
+.cal-dot.unspoken_civilization { background: var(--ch-unspoken); }
+.cal-dot.dim { opacity: 0.35; }
+
+.unscheduled-item {
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.unscheduled-item:last-child { border-bottom: none; }

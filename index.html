@@ -30,6 +30,13 @@
   <!-- Hauptansicht -->
   <section id="mainScreen" class="screen hidden">
 
+    <nav class="tabbar">
+      <button class="tab-btn active" data-tab="tab-upload">Generieren/Upload</button>
+      <button class="tab-btn" data-tab="tab-dashboard">📊 Dashboard</button>
+    </nav>
+
+    <div id="tab-upload" class="tab-panel">
+
     <section class="card">
       <h2>Content generieren</h2>
       <div class="channel-select">
@@ -88,10 +95,33 @@
       </div>
     </section>
 
+    </div>
+
+    <div id="tab-dashboard" class="tab-panel hidden">
+      <section class="card">
+        <h2>📅 Zeitplan-Kalender</h2>
+        <div class="calendar-nav">
+          <button id="calPrevBtn" class="icon-btn">◀</button>
+          <div id="calMonthLabel" class="cal-month-label"></div>
+          <button id="calNextBtn" class="icon-btn">▶</button>
+        </div>
+        <div class="calendar-legend">
+          <span class="legend-item"><span class="legend-dot briefww2"></span>BriefWW2</span>
+          <span class="legend-item"><span class="legend-dot unspoken_civilization"></span>Unspoken Civilization</span>
+        </div>
+        <div id="calendarGrid" class="calendar-grid"></div>
+      </section>
+
+      <section class="card">
+        <h2>🕓 Noch nicht eingeplant</h2>
+        <div id="unscheduledList" class="status-text"></div>
+      </section>
+    </div>
+
   </section>
 
 </main>
 
-<script src="app.js?v=4"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
