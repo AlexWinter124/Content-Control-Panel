@@ -189,7 +189,7 @@ function renderPrompts(body) {
   const sections = body.split(/\n---\n/);
   const blocks = sections
     .map((section) => {
-      const headerMatch = section.match(/##\s*([a-z_]+):\s*(.+)/i);
+      const headerMatch = section.match(/##\s*([a-z0-9_]+):\s*(.+)/i);
       const statusMatch = section.match(/\*\*Status:\s*`([^`]+)`/);
       const titleMatch = section.match(/\*\*Titel:\*\*\s*(.+)/);
       const promptMatch = section.match(/```\n([\s\S]*?)\n```/);
