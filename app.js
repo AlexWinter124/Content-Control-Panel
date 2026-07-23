@@ -441,6 +441,8 @@ async function loadDashboard() {
   }
   renderCalendar();
   renderUnscheduled();
+
+  if (statsHistory === null) await loadStats();
 }
 
 async function fetchAllJobs() {
@@ -516,6 +518,112 @@ function renderUnscheduled() {
       </div>`
     )
     .join("");
+}
+
+// --- Statistiken ---
+
+const statsEls = {
+  grid: document.getElementById("statsGrid"),
+  updatedAt: document.getElementById("statsUpdatedAt"),
+  status: document.getElementById("statsStatus"),
+  refreshBtn: document.getElementById("refreshStatsBtn"),
+};
+
+let statsHistory = null;
+
+async function loadStats() {
+  statsEls.status.textContent = "Lade Statistiken...";
+  statsHistory = await fetchStatsHistory();
+  renderStats();
+  statsEls.status.textContent = "";
+}
+
+async function fetchStatsHistory() {
+  try {
+    const res = await ghFetch("/contents/data/stats/history.json");
+    if (!res.ok) return [];
+    const data = await res.json();
+    return JSON.parse(decodeURIComponent(escape(atob(data.content))));
+  } catch {
+    return [];
+  }
+}
+
+function renderStats() {
+  if (!statsHistory || statsHistory.length === 0) {
+    statsEls.updatedAt.textContent = "";
+    statsEls.grid.innerHTML = "";
+    statsEls.status.textContent = "Noch keine Statistiken gesammelt - auf 🔄 tippen.";
+    return;
+  }
+
+  const latest = statsHistory[statsHistory.length - 1];
+  const updated = new Date(latest.collected_at);
+  statsEls.updatedAt.textContent = `Stand: ${updated.toLocaleString("de-DE")}`;
+
+  const fmt = (n) => (n === undefined || n === null ? "–" : n.toLocaleString("de-DE"));
+
+  statsEls.grid.innerHTML = Object.entries(latest.channels)
+    .map(([channel, data]) => {
+      const yt = data.youtube || {};
+      return `
+        <div class="stat-channel-block" data-channel="${channel}">
+          <div class="stat-channel-name">${escapeHtml(CHANNEL_LABELS[channel] || channel)}</div>
+          <div class="stat-tiles">
+            <div class="stat-tile"><div class="stat-tile-value">${fmt(yt.subscribers)}</div><div class="stat-tile-label">YT Abonnenten</div></div>
+            <div class="stat-tile"><div class="stat-tile-value">${fmt(yt.views)}</div><div class="stat-tile-label">YT Views</div></div>
+            <div class="stat-tile"><div class="stat-tile-value">${fmt(yt.videos)}</div><div class="stat-tile-label">YT Videos</div></div>
+            <div class="stat-tile"><div class="stat-tile-value">${fmt(data.facebook_followers)}</div><div class="stat-tile-label">FB Follower</div></div>
+            <div class="stat-tile"><div class="stat-tile-value">${fmt(data.instagram_followers)}</div><div class="stat-tile-label">IG Follower</div></div>
+            <div class="stat-tile"><div class="stat-tile-value">${fmt(data.instagram_media_count)}</div><div class="stat-tile-label">IG Posts</div></div>
+          </div>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+statsEls.refreshBtn.addEventListener("click", async () => {
+  statsEls.refreshBtn.disabled = true;
+  statsEls.status.textContent = "Starte Aktualisierung...";
+  const triggerTime = new Date();
+
+  try {
+    const dispatchRes = await ghFetch("/actions/workflows/collect-stats.yml/dispatches", {
+      method: "POST",
+      body: JSON.stringify({ ref: "main" }),
+    });
+    if (!dispatchRes.ok) {
+      throw new Error(`Konnte nicht gestartet werden (HTTP ${dispatchRes.status})`);
+    }
+
+    statsEls.status.textContent = "Sammle Statistiken (dauert i.d.R. 20-40s)...";
+    const updated = await pollForStatsUpdate(triggerTime);
+
+    if (!updated) {
+      statsEls.status.textContent = "Kein Ergebnis nach 2 Minuten - schau im Actions-Tab nach.";
+      return;
+    }
+
+    statsHistory = updated;
+    renderStats();
+    statsEls.status.textContent = "Aktualisiert!";
+  } catch (err) {
+    statsEls.status.textContent = `Fehler: ${err.message}`;
+  } finally {
+    statsEls.refreshBtn.disabled = false;
+  }
+});
+
+async function pollForStatsUpdate(sinceDate, maxWaitMs = 120000, intervalMs = 5000) {
+  const start = Date.now();
+  while (Date.now() - start < maxWaitMs) {
+    const history = await fetchStatsHistory();
+    const latest = history[history.length - 1];
+    if (latest && new Date(latest.collected_at) >= sinceDate) return history;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return null;
 }
 
 init();

@@ -99,6 +99,16 @@
 
     <div id="tab-dashboard" class="tab-panel hidden">
       <section class="card">
+        <div class="stats-header">
+          <h2>📈 Statistiken</h2>
+          <button id="refreshStatsBtn" class="icon-btn" title="Aktualisieren">🔄</button>
+        </div>
+        <div id="statsUpdatedAt" class="status-text"></div>
+        <div id="statsGrid" class="stats-grid"></div>
+        <div id="statsStatus" class="status-text"></div>
+      </section>
+
+      <section class="card">
         <h2>📅 Zeitplan-Kalender</h2>
         <div class="calendar-nav">
           <button id="calPrevBtn" class="icon-btn">◀</button>
@@ -122,6 +132,6 @@
 
 </main>
 
-<script src="app.js?v=5"></script>
+<script src="app.js?v=6"></script>
 </body>
 </html>
