@@ -291,6 +291,10 @@ function escapeHtml(str) {
 
 // --- Video-Upload ---
 
+const TRACKING_KEY_PREFIX = "bww2_tracking_";
+const TRACKING_ACTIVE_POLL_MS = 4 * 60 * 1000; // 4 Minuten aktiv nachfragen, danach nur noch manuell
+const TRACKING_POLL_INTERVAL_MS = 8000;
+
 const els2 = {
   chkPreview: document.getElementById("chkPreview"),
 };
@@ -298,6 +302,77 @@ els2.chkPreview.checked = localStorage.getItem(PREVIEW_KEY) === "1";
 els2.chkPreview.addEventListener("change", () => {
   localStorage.setItem(PREVIEW_KEY, els2.chkPreview.checked ? "1" : "0");
 });
+
+function getTracking(channel) {
+  try {
+    const raw = localStorage.getItem(TRACKING_KEY_PREFIX + channel);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function setTracking(channel, jobId) {
+  localStorage.setItem(TRACKING_KEY_PREFIX + channel, JSON.stringify({ jobId, startedAt: Date.now() }));
+}
+
+function clearTrackingStorage(channel) {
+  localStorage.removeItem(TRACKING_KEY_PREFIX + channel);
+}
+
+// Ermittelt VOR dem Hochladen, welcher Job (FIFO, aeltester "pending_video"
+// Job dieses Kanals) das gerade hochgeladene Video abbekommen wird - das ist
+// dieselbe Zuordnungsregel wie render_video.py serverseitig verwendet.
+async function getOldestPendingJobId(channel) {
+  const listRes = await ghFetch("/contents/data/queue/pending");
+  if (!listRes.ok) return null;
+  const files = (await listRes.json())
+    .filter((f) => f.name.startsWith(`${channel}_`) && f.name.endsWith(".json"))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  for (const file of files) {
+    const fileRes = await ghFetch(`/contents/${file.path}`);
+    if (!fileRes.ok) continue;
+    const data = await fileRes.json();
+    const job = JSON.parse(decodeURIComponent(escape(atob(data.content))));
+    if (job.status === "pending_video") return job.id;
+  }
+  return null;
+}
+
+async function fetchJobById(jobId) {
+  const res = await ghFetch(`/contents/data/queue/pending/${jobId}.json`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  return JSON.parse(decodeURIComponent(escape(atob(data.content))));
+}
+
+// Ueber den "raw"-Media-Type geholt statt per JSON+base64 - das gerenderte
+// Video kann mehrere MB gross sein, die JSON-Antwort der Contents API liefert
+// den base64-Inhalt aber nur bis 1MB inline mit.
+async function fetchRenderedVideoUrl(jobId) {
+  const res = await ghFetch(`/contents/data/queue/rendered/${jobId}.mp4`, {
+    headers: { Accept: "application/vnd.github.raw" },
+  });
+  if (!res.ok) return null;
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
+async function checkPublishWarning(jobId) {
+  const res = await ghFetch("/issues?state=open&sort=created&direction=desc&per_page=20");
+  if (!res.ok) return null;
+  const issues = await res.json();
+  const match = issues.find((i) => i.title.startsWith("Publish-Warnung") && (i.body || "").includes(jobId));
+  if (!match) return null;
+  return {
+    body: match.body || "",
+    isWaitingOnSibling: (match.body || "").includes("fuer folgende Kanaele fehlt"),
+  };
+}
+
+function fmtDateTime(iso) {
+  return new Date(iso).toLocaleString("de-DE", { dateStyle: "medium", timeStyle: "short" });
+}
 
 document.querySelectorAll(".dropzone").forEach((zone) => {
   const channel = zone.dataset.channel;
@@ -307,8 +382,140 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
   const previewVideo = zone.querySelector(".dz-preview-video");
   const discardBtn = zone.querySelector(".dz-discard-btn");
   const confirmBtn = zone.querySelector(".dz-confirm-btn");
+  const trackingBox = zone.querySelector(".dz-tracking");
+  const trackingLabel = zone.querySelector(".dz-tracking-label");
+  const trackingVideo = zone.querySelector(".dz-tracking-video");
+  const trackingRefreshBtn = zone.querySelector(".dz-tracking-refresh-btn");
+  const trackingClearBtn = zone.querySelector(".dz-tracking-clear-btn");
   let pendingFile = null;
   let objectUrl = null;
+  let trackingVideoObjectUrl = null;
+  let pollTimer = null;
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearTimeout(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function resetTrackingUi() {
+    stopPolling();
+    if (trackingVideoObjectUrl) {
+      URL.revokeObjectURL(trackingVideoObjectUrl);
+      trackingVideoObjectUrl = null;
+    }
+    trackingVideo.src = "";
+    trackingVideo.classList.add("hidden");
+    trackingRefreshBtn.classList.add("hidden");
+    trackingClearBtn.classList.add("hidden");
+    trackingBox.classList.add("hidden");
+    trackingLabel.className = "dz-tracking-label";
+    trackingLabel.textContent = "";
+  }
+
+  async function pollOnce(jobId) {
+    const job = await fetchJobById(jobId);
+    if (!job) {
+      trackingLabel.textContent = "Job nicht gefunden (evtl. entfernt).";
+      return "unknown";
+    }
+
+    if (job.status === "published") {
+      trackingLabel.className = "dz-tracking-label success";
+      trackingLabel.textContent = "✅ Erfolgreich auf YouTube, Facebook und Instagram veröffentlicht!";
+      trackingRefreshBtn.classList.add("hidden");
+      trackingClearBtn.classList.add("hidden");
+      clearTrackingStorage(channel);
+      stopPolling();
+      setTimeout(resetTrackingUi, 4000);
+      return "done";
+    }
+
+    if (job.status === "scheduled") {
+      trackingLabel.className = "dz-tracking-label success";
+      const when = job.publish_at ? fmtDateTime(job.publish_at) : "bald";
+      trackingLabel.textContent =
+        `✅ Hochgeladen zu YouTube & Facebook, geplant für ${when}. Instagram folgt automatisch kurz vorher.`;
+      trackingRefreshBtn.classList.remove("hidden");
+      trackingClearBtn.classList.remove("hidden");
+      return "scheduled";
+    }
+
+    if (job.status === "rendered") {
+      if (!trackingVideoObjectUrl) {
+        const url = await fetchRenderedVideoUrl(jobId);
+        if (url) {
+          trackingVideoObjectUrl = url;
+          trackingVideo.src = url;
+          trackingVideo.classList.remove("hidden");
+        }
+      }
+      const warning = await checkPublishWarning(jobId);
+      trackingRefreshBtn.classList.remove("hidden");
+      trackingClearBtn.classList.remove("hidden");
+      if (warning && !warning.isWaitingOnSibling) {
+        trackingLabel.className = "dz-tracking-label error";
+        trackingLabel.textContent = `❌ Fehler beim Veröffentlichen: ${warning.body.slice(0, 220)}`;
+        stopPolling();
+        return "error";
+      }
+      trackingLabel.className = "dz-tracking-label";
+      trackingLabel.textContent = warning
+        ? "🎬 Fertig gerendert - wartet auf das Video des anderen Kanals, bevor beide zusammen veröffentlicht werden."
+        : "🎬 Fertig gerendert - wird gerade veröffentlicht...";
+      return "rendered";
+    }
+
+    trackingLabel.className = "dz-tracking-label";
+    trackingLabel.textContent = "⏳ Warte auf Rendering...";
+    trackingRefreshBtn.classList.remove("hidden");
+    trackingClearBtn.classList.remove("hidden");
+    return "pending";
+  }
+
+  function startTracking(jobId, { activePoll }) {
+    setTracking(channel, jobId);
+    trackingBox.classList.remove("hidden");
+    trackingLabel.textContent = "⏳ Hochgeladen - warte auf Rendering...";
+    trackingRefreshBtn.classList.add("hidden");
+    trackingClearBtn.classList.remove("hidden");
+
+    if (!activePoll) {
+      pollOnce(jobId);
+      return;
+    }
+
+    const start = Date.now();
+    const tick = async () => {
+      const result = await pollOnce(jobId);
+      if (result === "done" || result === "error") return;
+      if (Date.now() - start > TRACKING_ACTIVE_POLL_MS) return; // ab hier nur noch manueller Refresh-Button
+      pollTimer = setTimeout(tick, TRACKING_POLL_INTERVAL_MS);
+    };
+    pollTimer = setTimeout(tick, TRACKING_POLL_INTERVAL_MS);
+  }
+
+  trackingRefreshBtn.addEventListener("click", async () => {
+    const tracking = getTracking(channel);
+    if (!tracking) return;
+    trackingRefreshBtn.disabled = true;
+    await pollOnce(tracking.jobId);
+    trackingRefreshBtn.disabled = false;
+  });
+
+  trackingClearBtn.addEventListener("click", () => {
+    if (!confirm("Verfolgung dieses Uploads beenden? Der Job laeuft im Hintergrund trotzdem weiter.")) return;
+    clearTrackingStorage(channel);
+    resetTrackingUi();
+  });
+
+  // Beim (Neu-)Laden pruefen, ob fuer diesen Kanal noch ein Upload verfolgt
+  // wird (z.B. Tab war zwischenzeitlich im Hintergrund/geschlossen).
+  const existingTracking = getTracking(channel);
+  if (existingTracking) {
+    startTracking(existingTracking.jobId, { activePoll: true });
+  }
 
   function resetPreview() {
     if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -335,7 +542,7 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
       status.className = "dz-status";
       status.textContent = "";
     } else {
-      handleUpload(channel, file, status);
+      handleUpload(channel, file, status, startTracking);
     }
   }
 
@@ -360,12 +567,15 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
   confirmBtn.addEventListener("click", async () => {
     const file = pendingFile;
     resetPreview();
-    await handleUpload(channel, file, status);
+    await handleUpload(channel, file, status, startTracking);
   });
 });
 
-async function handleUpload(channel, file, statusEl) {
+async function handleUpload(channel, file, statusEl, startTracking) {
   statusEl.className = "dz-status";
+  statusEl.textContent = "Suche passenden Job...";
+  const targetJobId = await getOldestPendingJobId(channel).catch(() => null);
+
   statusEl.textContent = `Lade "${file.name}" hoch...`;
 
   try {
@@ -387,8 +597,16 @@ async function handleUpload(channel, file, statusEl) {
       throw new Error(err.message || `HTTP ${res.status}`);
     }
 
-    statusEl.className = "dz-status success";
-    statusEl.textContent = `✓ Hochgeladen: ${file.name}`;
+    if (targetJobId) {
+      statusEl.className = "dz-status success";
+      statusEl.textContent = `✓ Hochgeladen: ${file.name}`;
+      startTracking(targetJobId, { activePoll: true });
+    } else {
+      statusEl.className = "dz-status error";
+      statusEl.textContent =
+        `✓ Hochgeladen: ${file.name} - ⚠️ aber KEIN wartender Job fuer diesen Kanal gefunden! ` +
+        "Bitte pruefen, ob zuerst 'Content generieren' noetig ist.";
+    }
   } catch (err) {
     statusEl.className = "dz-status error";
     statusEl.textContent = `Fehler: ${err.message}`;

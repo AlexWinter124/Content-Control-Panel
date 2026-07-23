@@ -163,6 +163,40 @@ input[type="password"], input[type="text"] {
   margin-top: 0.5rem;
 }
 
+.dz-tracking {
+  margin-top: 0.75rem;
+  text-align: left;
+}
+
+.dz-tracking-label {
+  font-size: 0.9rem;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  margin-bottom: 0.5rem;
+}
+
+.dz-tracking-label.success { color: var(--success); font-weight: 600; }
+.dz-tracking-label.error { color: var(--error); font-weight: 600; }
+
+.dz-tracking-video {
+  width: 100%;
+  border-radius: 10px;
+  background: #000;
+  max-height: 280px;
+  margin-bottom: 0.5rem;
+}
+
+.dz-tracking-actions {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.dz-tracking-actions .secondary-btn {
+  width: auto;
+  flex: 1;
+  margin-top: 0;
+}
+
 .status-text {
   margin-top: 0.75rem;
   font-size: 0.9rem;
