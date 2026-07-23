@@ -53,18 +53,36 @@
 
     <section class="card">
       <h2>Rohvideo hochladen</h2>
+      <label class="channel-check preview-toggle">
+        <input type="checkbox" id="chkPreview">
+        <span class="channel-label">Vorschau vor dem Hochladen anzeigen</span>
+      </label>
       <div class="dropzones">
         <div class="dropzone" data-channel="briefww2">
           <div class="dz-label">@BriefWW2</div>
           <div class="dz-hint">Tippen oder Video reinziehen</div>
           <input type="file" accept="video/mp4,video/*" data-channel="briefww2" class="dz-input">
           <div class="dz-status"></div>
+          <div class="dz-preview hidden">
+            <video controls playsinline class="dz-preview-video"></video>
+            <div class="dz-preview-actions">
+              <button class="secondary-btn dz-discard-btn">Verwerfen</button>
+              <button class="primary-btn dz-confirm-btn">Hochladen</button>
+            </div>
+          </div>
         </div>
         <div class="dropzone" data-channel="unspoken_civilization">
           <div class="dz-label">@UnspokenCivilization</div>
           <div class="dz-hint">Tippen oder Video reinziehen</div>
           <input type="file" accept="video/mp4,video/*" data-channel="unspoken_civilization" class="dz-input">
           <div class="dz-status"></div>
+          <div class="dz-preview hidden">
+            <video controls playsinline class="dz-preview-video"></video>
+            <div class="dz-preview-actions">
+              <button class="secondary-btn dz-discard-btn">Verwerfen</button>
+              <button class="primary-btn dz-confirm-btn">Hochladen</button>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -73,6 +91,6 @@
 
 </main>
 
-<script src="app.js"></script>
+<script src="app.js?v=3"></script>
 </body>
 </html>

@@ -2,6 +2,7 @@ const OWNER = "AlexWinter124";
 const REPO = "BriefWW2-Automation";
 const API = `https://api.github.com/repos/${OWNER}/${REPO}`;
 const TOKEN_KEY = "bww2_control_panel_pat";
+const PREVIEW_KEY = "bww2_preview_before_upload";
 
 const els = {
   setupScreen: document.getElementById("setupScreen"),
@@ -116,6 +117,7 @@ els.saveTokenBtn.addEventListener("click", async () => {
 });
 
 els.settingsBtn.addEventListener("click", () => {
+  if (!confirm("Zugangscode wirklich zuruecksetzen? Du musst ihn danach neu eingeben.")) return;
   clearToken();
   showSetup();
 });
@@ -239,14 +241,49 @@ function escapeHtml(str) {
 
 // --- Video-Upload ---
 
+const els2 = {
+  chkPreview: document.getElementById("chkPreview"),
+};
+els2.chkPreview.checked = localStorage.getItem(PREVIEW_KEY) === "1";
+els2.chkPreview.addEventListener("change", () => {
+  localStorage.setItem(PREVIEW_KEY, els2.chkPreview.checked ? "1" : "0");
+});
+
 document.querySelectorAll(".dropzone").forEach((zone) => {
   const channel = zone.dataset.channel;
   const input = zone.querySelector(".dz-input");
   const status = zone.querySelector(".dz-status");
+  const previewBox = zone.querySelector(".dz-preview");
+  const previewVideo = zone.querySelector(".dz-preview-video");
+  const discardBtn = zone.querySelector(".dz-discard-btn");
+  const confirmBtn = zone.querySelector(".dz-confirm-btn");
+  let pendingFile = null;
+  let objectUrl = null;
 
-  input.addEventListener("change", () => {
-    if (input.files[0]) handleUpload(channel, input.files[0], status);
-  });
+  function resetPreview() {
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+    objectUrl = null;
+    pendingFile = null;
+    previewVideo.src = "";
+    previewBox.classList.add("hidden");
+    input.value = "";
+  }
+
+  function handleFile(file) {
+    if (!file) return;
+    if (els2.chkPreview.checked) {
+      pendingFile = file;
+      objectUrl = URL.createObjectURL(file);
+      previewVideo.src = objectUrl;
+      previewBox.classList.remove("hidden");
+      status.className = "dz-status";
+      status.textContent = "";
+    } else {
+      handleUpload(channel, file, status);
+    }
+  }
+
+  input.addEventListener("change", () => handleFile(input.files[0]));
 
   zone.addEventListener("dragover", (e) => {
     e.preventDefault();
@@ -256,8 +293,18 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
   zone.addEventListener("drop", (e) => {
     e.preventDefault();
     zone.classList.remove("dragover");
-    const file = e.dataTransfer.files[0];
-    if (file) handleUpload(channel, file, status);
+    handleFile(e.dataTransfer.files[0]);
+  });
+
+  discardBtn.addEventListener("click", () => {
+    if (!confirm("Dieses Video wirklich verwerfen? Es wird NICHT hochgeladen.")) return;
+    resetPreview();
+  });
+
+  confirmBtn.addEventListener("click", async () => {
+    const file = pendingFile;
+    resetPreview();
+    await handleUpload(channel, file, status);
   });
 });
 
