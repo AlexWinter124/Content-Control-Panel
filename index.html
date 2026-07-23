@@ -108,6 +108,17 @@
         <div id="statsStatus" class="status-text"></div>
       </section>
 
+      <section class="card trend-card">
+        <h2>📡 Verlauf</h2>
+        <div class="range-select" id="rangeSelect">
+          <button class="range-btn" data-days="7">7T</button>
+          <button class="range-btn active" data-days="30">1M</button>
+          <button class="range-btn" data-days="182">6M</button>
+          <button class="range-btn" data-days="365">1J</button>
+        </div>
+        <div id="trendCharts" class="trend-charts"></div>
+      </section>
+
       <section class="card">
         <h2>📅 Zeitplan-Kalender</h2>
         <div class="calendar-nav">
@@ -132,6 +143,6 @@
 
 </main>
 
-<script src="app.js?v=6"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

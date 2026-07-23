@@ -11,6 +11,7 @@
   --radius: 14px;
   --ch-briefww2: #4d8dff;
   --ch-unspoken: #d9455f;
+  --grid-line: #2c303a;
 }
 
 @media (prefers-color-scheme: light) {
@@ -22,6 +23,9 @@
     --accent: #d9a600;
     --accent-text: #14151a;
     --border: #e2e2e6;
+    --ch-briefww2: #2f6fe0;
+    --ch-unspoken: #c02e48;
+    --grid-line: #e2e2e6;
   }
 }
 
@@ -460,4 +464,169 @@ input[type="password"], input[type="text"] {
   font-size: 0.68rem;
   color: var(--text-dim);
   margin-top: 0.15rem;
+}
+
+/* --- Verlauf / Trend-Charts ("Jarvis"-HUD-Look) --- */
+
+.trend-card { position: relative; }
+
+.range-select {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.range-btn {
+  flex: 1;
+  padding: 0.5rem 0.4rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.range-btn.active {
+  color: var(--accent-text);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.trend-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.trend-chart-block {
+  position: relative;
+}
+
+.trend-chart-title {
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  margin-bottom: 0.4rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.trend-svg-wrap {
+  position: relative;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(77, 141, 255, 0.04), transparent 60%);
+  border: 1px solid var(--border);
+}
+
+.trend-svg { display: block; width: 100%; height: auto; touch-action: none; }
+
+.trend-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 3px currentColor);
+}
+
+.trend-end-dot {
+  stroke-width: 2;
+}
+
+.trend-gridline {
+  stroke: var(--grid-line);
+  stroke-width: 1;
+}
+
+.trend-axis-label {
+  fill: var(--text-dim);
+  font-size: 9px;
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+.trend-end-label {
+  fill: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+.trend-crosshair {
+  stroke: var(--text-dim);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.trend-legend {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+.trend-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.trend-legend-key {
+  width: 14px;
+  height: 2px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.trend-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+  font-size: 0.75rem;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transition: opacity 0.1s;
+  white-space: nowrap;
+  z-index: 5;
+  font-family: "SFMono-Regular", Consolas, monospace;
+}
+
+.trend-tooltip-date {
+  color: var(--text-dim);
+  margin-bottom: 0.3rem;
+  font-weight: 600;
+}
+
+.trend-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.trend-tooltip-key {
+  width: 10px;
+  height: 2px;
+  display: inline-block;
+  border-radius: 2px;
+}
+
+.trend-tooltip-value {
+  font-weight: 700;
+  color: var(--text);
+  margin-left: auto;
+  padding-left: 0.75rem;
+}
+
+.trend-empty {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  padding: 1.5rem 0;
+  text-align: center;
 }

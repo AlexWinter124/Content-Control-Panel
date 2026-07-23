@@ -535,6 +535,7 @@ async function loadStats() {
   statsEls.status.textContent = "Lade Statistiken...";
   statsHistory = await fetchStatsHistory();
   renderStats();
+  renderTrendCharts();
   statsEls.status.textContent = "";
 }
 
@@ -607,6 +608,7 @@ statsEls.refreshBtn.addEventListener("click", async () => {
 
     statsHistory = updated;
     renderStats();
+    renderTrendCharts();
     statsEls.status.textContent = "Aktualisiert!";
   } catch (err) {
     statsEls.status.textContent = `Fehler: ${err.message}`;
@@ -624,6 +626,218 @@ async function pollForStatsUpdate(sinceDate, maxWaitMs = 120000, intervalMs = 50
     await new Promise((r) => setTimeout(r, intervalMs));
   }
   return null;
+}
+
+// --- Trend-Charts ---
+
+const CHANNEL_COLORS = {
+  briefww2: "var(--ch-briefww2)",
+  unspoken_civilization: "var(--ch-unspoken)",
+};
+
+const METRIC_DEFS = [
+  { key: "yt_subs", label: "YouTube Abonnenten", accessor: (c) => c?.youtube?.subscribers },
+  { key: "yt_views", label: "YouTube Views", accessor: (c) => c?.youtube?.views },
+  { key: "fb_followers", label: "Facebook Follower", accessor: (c) => c?.facebook_followers },
+  { key: "ig_followers", label: "Instagram Follower", accessor: (c) => c?.instagram_followers },
+];
+
+let selectedRangeDays = 30;
+
+document.querySelectorAll(".range-btn").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".range-btn").forEach((b) => b.classList.remove("active"));
+    btn.classList.add("active");
+    selectedRangeDays = Number(btn.dataset.days);
+    renderTrendCharts();
+  });
+});
+
+function fmtCompact(n) {
+  if (n === undefined || n === null) return "–";
+  if (n >= 1e6) return (n / 1e6).toFixed(1).replace(/\.0$/, "") + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(1).replace(/\.0$/, "") + "K";
+  return String(n);
+}
+
+function niceMax(value) {
+  if (value <= 0) return 1;
+  const magnitude = Math.pow(10, Math.floor(Math.log10(value)));
+  const normalized = value / magnitude;
+  let niceNorm;
+  if (normalized <= 1) niceNorm = 1;
+  else if (normalized <= 2) niceNorm = 2;
+  else if (normalized <= 5) niceNorm = 5;
+  else niceNorm = 10;
+  return niceNorm * magnitude;
+}
+
+function renderTrendCharts() {
+  const container = document.getElementById("trendCharts");
+  container.innerHTML = "";
+
+  if (!statsHistory || statsHistory.length === 0) {
+    container.innerHTML = '<div class="trend-empty">Noch keine Verlaufsdaten - sammle sich mit jedem Update.</div>';
+    return;
+  }
+
+  const cutoff = Date.now() - selectedRangeDays * 24 * 60 * 60 * 1000;
+  const snapshots = statsHistory
+    .map((s) => ({ date: new Date(s.collected_at), channels: s.channels }))
+    .filter((s) => s.date.getTime() >= cutoff)
+    .sort((a, b) => a.date - b.date);
+
+  METRIC_DEFS.forEach((metric) => {
+    const block = document.createElement("div");
+    block.className = "trend-chart-block";
+    block.innerHTML = `<div class="trend-chart-title">${escapeHtml(metric.label)}</div>`;
+    container.appendChild(block);
+    renderLineChart(block, metric, snapshots);
+  });
+}
+
+function renderLineChart(block, metric, snapshots) {
+  const W = 600, H = 180;
+  const marginLeft = 38, marginRight = 54, marginTop = 12, marginBottom = 22;
+  const plotW = W - marginLeft - marginRight;
+  const plotH = H - marginTop - marginBottom;
+
+  const channels = Object.keys(CHANNEL_COLORS);
+  const seriesByChannel = {};
+  let hasAnyData = false;
+  channels.forEach((ch) => {
+    seriesByChannel[ch] = snapshots
+      .map((s) => ({ x: s.date, y: metric.accessor(s.channels[ch]) }))
+      .filter((p) => p.y !== undefined && p.y !== null);
+    if (seriesByChannel[ch].length > 0) hasAnyData = true;
+  });
+
+  if (!hasAnyData) {
+    block.innerHTML += '<div class="trend-empty">Keine Daten in diesem Zeitraum.</div>';
+    return;
+  }
+
+  const allPoints = channels.flatMap((ch) => seriesByChannel[ch]);
+  const xMin = Math.min(...allPoints.map((p) => p.x.getTime()));
+  const xMax = Math.max(...allPoints.map((p) => p.x.getTime()));
+  const yMaxRaw = Math.max(...allPoints.map((p) => p.y));
+  const yMax = niceMax(yMaxRaw * 1.15);
+  const yMin = 0;
+
+  const xScale = (t) => (xMax === xMin ? marginLeft + plotW / 2 : marginLeft + ((t - xMin) / (xMax - xMin)) * plotW);
+  const yScale = (v) => marginTop + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+
+  const tickCount = 4;
+  let gridlines = "";
+  for (let i = 0; i <= tickCount; i++) {
+    const v = (yMax / tickCount) * i;
+    const y = yScale(v);
+    gridlines += `<line class="trend-gridline" x1="${marginLeft}" x2="${W - marginRight}" y1="${y}" y2="${y}"></line>`;
+    gridlines += `<text class="trend-axis-label" x="${marginLeft - 6}" y="${y + 3}" text-anchor="end">${fmtCompact(Math.round(v))}</text>`;
+  }
+
+  let linesAndDots = "";
+  const endLabelPositions = [];
+  channels.forEach((ch) => {
+    const pts = seriesByChannel[ch];
+    if (pts.length === 0) return;
+    const colorVar = CHANNEL_COLORS[ch];
+    if (pts.length > 1) {
+      const pathD = pts.map((p, i) => `${i === 0 ? "M" : "L"}${xScale(p.x.getTime())},${yScale(p.y)}`).join(" ");
+      linesAndDots += `<path class="trend-line" d="${pathD}" style="stroke:${colorVar}; color:${colorVar};"></path>`;
+    }
+    const last = pts[pts.length - 1];
+    const lx = xScale(last.x.getTime());
+    const ly = yScale(last.y);
+    linesAndDots += `<circle class="trend-end-dot" cx="${lx}" cy="${ly}" r="5" style="fill:${colorVar};"></circle>`;
+    endLabelPositions.push({ ch, ly, value: last.y, colorVar, lx });
+  });
+
+  // Kollisions-Vermeidung: wenn Endlabels zu nah beieinander, leicht auseinanderschieben
+  endLabelPositions.sort((a, b) => a.ly - b.ly);
+  for (let i = 1; i < endLabelPositions.length; i++) {
+    const minGap = 14;
+    if (endLabelPositions[i].ly - endLabelPositions[i - 1].ly < minGap) {
+      endLabelPositions[i].ly = endLabelPositions[i - 1].ly + minGap;
+    }
+  }
+  let endLabels = "";
+  endLabelPositions.forEach((p) => {
+    endLabels += `<text class="trend-end-label" x="${W - marginRight + 8}" y="${p.ly + 3}">${fmtCompact(p.value)}</text>`;
+  });
+
+  const svg = `
+    <svg class="trend-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      ${gridlines}
+      ${linesAndDots}
+      ${endLabels}
+      <line class="trend-crosshair" id="crosshair-${metric.key}" x1="0" x2="0" y1="${marginTop}" y2="${marginTop + plotH}"></line>
+    </svg>
+    <div class="trend-legend">
+      ${channels
+        .map(
+          (ch) => `<span class="trend-legend-item"><span class="trend-legend-key" style="background:${CHANNEL_COLORS[ch]};"></span>${escapeHtml(CHANNEL_LABELS[ch])}</span>`
+        )
+        .join("")}
+    </div>
+  `;
+
+  const wrap = document.createElement("div");
+  wrap.className = "trend-svg-wrap";
+  wrap.innerHTML = svg;
+  const tooltip = document.createElement("div");
+  tooltip.className = "trend-tooltip";
+  wrap.appendChild(tooltip);
+  block.appendChild(wrap);
+
+  const svgEl = wrap.querySelector(".trend-svg");
+  const crosshairEl = wrap.querySelector(".trend-crosshair");
+
+  function handleMove(clientX) {
+    const rect = svgEl.getBoundingClientRect();
+    const relX = ((clientX - rect.left) / rect.width) * W;
+    if (relX < marginLeft || relX > W - marginRight || allPoints.length === 0) {
+      crosshairEl.style.opacity = 0;
+      tooltip.style.opacity = 0;
+      return;
+    }
+    // Naechsten Snapshot-Zeitpunkt finden
+    let nearest = snapshots[0];
+    let nearestDist = Infinity;
+    snapshots.forEach((s) => {
+      const dist = Math.abs(xScale(s.date.getTime()) - relX);
+      if (dist < nearestDist) {
+        nearestDist = dist;
+        nearest = s;
+      }
+    });
+
+    const px = xScale(nearest.date.getTime());
+    crosshairEl.setAttribute("x1", px);
+    crosshairEl.setAttribute("x2", px);
+    crosshairEl.style.opacity = 1;
+
+    const rows = channels
+      .map((ch) => {
+        const v = metric.accessor(nearest.channels[ch]);
+        if (v === undefined || v === null) return "";
+        return `<div class="trend-tooltip-row"><span class="trend-tooltip-key" style="background:${CHANNEL_COLORS[ch]};"></span>${escapeHtml(CHANNEL_LABELS[ch])}<span class="trend-tooltip-value">${v.toLocaleString("de-DE")}</span></div>`;
+      })
+      .join("");
+    tooltip.innerHTML = `<div class="trend-tooltip-date">${nearest.date.toLocaleDateString("de-DE", { day: "2-digit", month: "short", year: "numeric" })}</div>${rows}`;
+    tooltip.style.opacity = 1;
+
+    const wrapRect = wrap.getBoundingClientRect();
+    const ttLeft = Math.min(Math.max((px / W) * wrapRect.width - 60, 4), wrapRect.width - 150);
+    tooltip.style.left = `${ttLeft}px`;
+    tooltip.style.top = "8px";
+  }
+
+  wrap.addEventListener("pointermove", (e) => handleMove(e.clientX));
+  wrap.addEventListener("pointerleave", () => {
+    crosshairEl.style.opacity = 0;
+    tooltip.style.opacity = 0;
+  });
 }
 
 init();
