@@ -763,19 +763,36 @@ async function handleUpload(channel, file, statusEl, startTracking) {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
     const path = `data/queue/incoming/${channel}/${Date.now()}_${safeName}`;
 
-    const res = await ghFetch(`/contents/${encodeURIComponent(path).replace(/%2F/g, "/")}`, {
-      method: "PUT",
-      body: JSON.stringify({
-        message: `Rohvideo hochgeladen ueber Control Panel (${channel})`,
-        content: base64,
-        branch: "main",
-      }),
-    });
-
-    if (!res.ok) {
+    // Jeder Contents-API-Schreibvorgang erzeugt einen eigenen Commit auf
+    // main - laedst du kurz hintereinander Videos fuer BEIDE Kanaele hoch
+    // (voellig normaler Ablauf), kann der zweite Commit noch auf den
+    // Vorgaenger-Stand aufsetzen wollen, der durch den ersten Upload
+    // gerade eben ueberholt wurde ("is at X but expected Y"). Transient -
+    // ein kurzer Retry reicht, da beim naechsten Versuch der aktuelle
+    // Stand neu gelesen wird.
+    let res;
+    let lastErr;
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      res = await ghFetch(`/contents/${encodeURIComponent(path).replace(/%2F/g, "/")}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          message: `Rohvideo hochgeladen ueber Control Panel (${channel})`,
+          content: base64,
+          branch: "main",
+        }),
+      });
+      if (res.ok) {
+        lastErr = null;
+        break;
+      }
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || `HTTP ${res.status}`);
+      lastErr = new Error(err.message || `HTTP ${res.status}`);
+      if (attempt < 4) {
+        statusEl.textContent = `Hochladen kollidierte kurz mit einem anderen Vorgang - Versuch ${attempt + 1}/4...`;
+        await new Promise((r) => setTimeout(r, 800 * attempt));
+      }
     }
+    if (lastErr) throw lastErr;
 
     if (targetJobId) {
       statusEl.className = "dz-status success";
