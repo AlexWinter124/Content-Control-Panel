@@ -682,6 +682,11 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
       status.className = "dz-status";
       status.textContent = "";
     } else {
+      // Feld sofort zuruecksetzen (nicht erst nach Abschluss des Uploads) -
+      // die bereits ausgewaehlte Datei bleibt als "file" trotzdem gueltig,
+      // aber das Feld ist sonst nach einem Upload nie geleert (nur der
+      // Vorschau-Pfad ueber resetPreview() macht das bisher).
+      input.value = "";
       handleUpload(channel, file, status, startTracking);
     }
   }
