@@ -250,20 +250,21 @@ input[type="password"], input[type="text"] {
 .dz-label { font-weight: 600; margin-bottom: 0.25rem; }
 .dz-hint { color: var(--text-dim); font-size: 0.85rem; }
 
-.dz-input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
+/* Der Klickbereich ist jetzt NUR das Label (Kanal-Name + Hinweistext),
+   nicht mehr die ganze Dropzone - das unsichtbare Datei-Feld liegt daher
+   auch nur noch dort, statt ueber die komplette Box (inkl. Vorschau-Video,
+   Tracking-Buttons etc.) zu liegen und deren Klicks abzufangen. */
+.dz-clickzone {
+  display: block;
   cursor: pointer;
-  width: 100%;
-  height: 100%;
 }
 
-/* Waehrend die Vorschau (mit Hochladen/Verwerfen-Buttons) angezeigt wird,
-   darf das unsichtbare Datei-Feld nicht mehr klickbar sein - sonst faengt
-   es Klicks auf die darunterliegenden Buttons ab und oeffnet stattdessen
-   wieder den Datei-Explorer. */
-.dz-input.dz-input-inactive {
+.dz-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  overflow: hidden;
   pointer-events: none;
 }
 
