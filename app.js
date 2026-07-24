@@ -814,6 +814,85 @@ document.querySelectorAll(".tab-btn").forEach((btn) => {
   });
 });
 
+// --- Videos pro Tag ---
+
+let scheduleConfigCache = null; // {content, sha} - Cache fuer die Dauer der Session
+
+const videosPerDayEls = {
+  buttons: document.querySelectorAll("#videosPerDaySelect .range-btn"),
+  status: document.getElementById("videosPerDayStatus"),
+};
+
+async function fetchScheduleConfig() {
+  const res = await ghFetch("/contents/config/schedule.json");
+  if (!res.ok) return null;
+  const data = await res.json();
+  const content = JSON.parse(decodeURIComponent(escape(atob(data.content))));
+  return { content, sha: data.sha };
+}
+
+function highlightVideosPerDay(count) {
+  videosPerDayEls.buttons.forEach((btn) => {
+    btn.classList.toggle("active", Number(btn.dataset.count) === count);
+  });
+}
+
+async function loadVideosPerDay() {
+  if (!scheduleConfigCache) {
+    scheduleConfigCache = await fetchScheduleConfig().catch(() => null);
+  }
+  if (scheduleConfigCache) {
+    highlightVideosPerDay(scheduleConfigCache.content.videos_per_day);
+  }
+}
+
+videosPerDayEls.buttons.forEach((btn) => {
+  btn.addEventListener("click", async () => {
+    const count = Number(btn.dataset.count);
+    if (!scheduleConfigCache) {
+      scheduleConfigCache = await fetchScheduleConfig().catch(() => null);
+    }
+    if (!scheduleConfigCache) {
+      videosPerDayEls.status.textContent = "Konnte config/schedule.json nicht laden.";
+      return;
+    }
+    if (scheduleConfigCache.content.videos_per_day === count) return; // schon aktiv
+    if (
+      !confirm(
+        `Wirklich auf ${count} Video(s) pro Tag und Kanal umstellen? Gilt fuer beide Kanaele, ab dem naechsten geplanten Video.`
+      )
+    ) {
+      return;
+    }
+
+    videosPerDayEls.status.textContent = "Speichere...";
+    const updatedContent = { ...scheduleConfigCache.content, videos_per_day: count };
+    const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(updatedContent, null, 2))));
+
+    try {
+      const res = await ghFetch("/contents/config/schedule.json", {
+        method: "PUT",
+        body: JSON.stringify({
+          message: `videos_per_day auf ${count} gesetzt (ueber Control Panel)`,
+          content: encoded,
+          sha: scheduleConfigCache.sha,
+          branch: "main",
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      scheduleConfigCache = { content: updatedContent, sha: data.content.sha };
+      highlightVideosPerDay(count);
+      videosPerDayEls.status.textContent = `✓ Auf ${count} Video(s) pro Tag umgestellt.`;
+    } catch (err) {
+      videosPerDayEls.status.textContent = `Fehler: ${err.message}`;
+    }
+  });
+});
+
 // --- Dashboard / Kalender ---
 
 const CHANNEL_LABELS = { briefww2: "BriefWW2", unspoken_civilization: "Unspoken Civilization" };
@@ -845,6 +924,7 @@ async function loadDashboard() {
   }
   renderCalendar();
   renderUnscheduled();
+  await loadVideosPerDay();
 
   if (statsHistory === null) await loadStats();
 }
