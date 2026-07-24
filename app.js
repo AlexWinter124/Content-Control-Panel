@@ -358,6 +358,20 @@ async function fetchRenderedVideoUrl(jobId) {
   return URL.createObjectURL(blob);
 }
 
+// Loescht eine Datei im Repo ueber die Contents API (braucht deren aktuelle
+// sha, deshalb erst GET dann DELETE). Gibt true zurueck bei Erfolg oder wenn
+// die Datei ohnehin schon nicht (mehr) existiert.
+async function deleteGithubFile(path, message) {
+  const getRes = await ghFetch(`/contents/${path}`);
+  if (!getRes.ok) return true;
+  const data = await getRes.json();
+  const delRes = await ghFetch(`/contents/${path}`, {
+    method: "DELETE",
+    body: JSON.stringify({ message, sha: data.sha, branch: "main" }),
+  });
+  return delRes.ok;
+}
+
 async function checkPublishWarning(jobId) {
   const res = await ghFetch("/issues?state=open&sort=created&direction=desc&per_page=20");
   if (!res.ok) return null;
@@ -387,6 +401,7 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
   const trackingVideo = zone.querySelector(".dz-tracking-video");
   const trackingRefreshBtn = zone.querySelector(".dz-tracking-refresh-btn");
   const trackingClearBtn = zone.querySelector(".dz-tracking-clear-btn");
+  const trackingDiscardBtn = zone.querySelector(".dz-tracking-discard-btn");
   let pendingFile = null;
   let objectUrl = null;
   let trackingVideoObjectUrl = null;
@@ -409,6 +424,7 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
     trackingVideo.classList.add("hidden");
     trackingRefreshBtn.classList.add("hidden");
     trackingClearBtn.classList.add("hidden");
+    trackingDiscardBtn.classList.add("hidden");
     trackingBox.classList.add("hidden");
     trackingLabel.className = "dz-tracking-label";
     trackingLabel.textContent = "";
@@ -417,7 +433,10 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
   async function pollOnce(jobId) {
     const job = await fetchJobById(jobId);
     if (!job) {
-      trackingLabel.textContent = "Job nicht gefunden (evtl. entfernt).";
+      trackingLabel.textContent = "Job nicht gefunden (evtl. entfernt/verworfen).";
+      trackingDiscardBtn.classList.add("hidden");
+      clearTrackingStorage(channel);
+      stopPolling();
       return "unknown";
     }
 
@@ -426,6 +445,7 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
       trackingLabel.textContent = "✅ Erfolgreich auf YouTube, Facebook und Instagram veröffentlicht!";
       trackingRefreshBtn.classList.add("hidden");
       trackingClearBtn.classList.add("hidden");
+      trackingDiscardBtn.classList.add("hidden");
       clearTrackingStorage(channel);
       stopPolling();
       setTimeout(resetTrackingUi, 4000);
@@ -439,6 +459,10 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
         `✅ Hochgeladen zu YouTube & Facebook, geplant für ${when}. Instagram folgt automatisch kurz vorher.`;
       trackingRefreshBtn.classList.remove("hidden");
       trackingClearBtn.classList.remove("hidden");
+      // Ab hier ist das Video schon extern bei YouTube/Facebook hochgeladen -
+      // ein einfaches Loeschen des lokalen Jobs wuerde das nicht rueckgaengig
+      // machen, deshalb den Loeschen-Button nur VOR diesem Punkt anbieten.
+      trackingDiscardBtn.classList.add("hidden");
       return "scheduled";
     }
 
@@ -454,6 +478,7 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
       const warning = await checkPublishWarning(jobId);
       trackingRefreshBtn.classList.remove("hidden");
       trackingClearBtn.classList.remove("hidden");
+      trackingDiscardBtn.classList.remove("hidden");
       if (warning && !warning.isWaitingOnSibling) {
         trackingLabel.className = "dz-tracking-label error";
         trackingLabel.textContent = `❌ Fehler beim Veröffentlichen: ${warning.body.slice(0, 220)}`;
@@ -471,6 +496,7 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
     trackingLabel.textContent = "⏳ Warte auf Rendering...";
     trackingRefreshBtn.classList.remove("hidden");
     trackingClearBtn.classList.remove("hidden");
+    trackingDiscardBtn.classList.add("hidden");
     return "pending";
   }
 
@@ -508,6 +534,41 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
     if (!confirm("Verfolgung dieses Uploads beenden? Der Job laeuft im Hintergrund trotzdem weiter.")) return;
     clearTrackingStorage(channel);
     resetTrackingUi();
+  });
+
+  trackingDiscardBtn.addEventListener("click", async () => {
+    const tracking = getTracking(channel);
+    if (!tracking) return;
+    if (
+      !confirm(
+        "Dieses gerenderte Video wirklich komplett loeschen? Der Job wird entfernt (noch nicht " +
+          "veroeffentlicht, also unbedenklich) - fuer diesen Kanal muss danach neuer Content " +
+          "generiert werden."
+      )
+    ) {
+      return;
+    }
+    trackingDiscardBtn.disabled = true;
+    trackingLabel.textContent = "Loesche Video und Job...";
+    try {
+      await deleteGithubFile(
+        `data/queue/rendered/${tracking.jobId}.mp4`,
+        `Verworfenes Video geloescht (${channel}, ueber Control Panel)`
+      );
+      await deleteGithubFile(
+        `data/queue/pending/${tracking.jobId}.json`,
+        `Verworfener Job geloescht (${channel}, ueber Control Panel)`
+      );
+      clearTrackingStorage(channel);
+      resetTrackingUi();
+      status.className = "dz-status";
+      status.textContent = "🗑️ Video verworfen - fuer diesen Kanal bitte neuen Content generieren.";
+    } catch (err) {
+      trackingLabel.className = "dz-tracking-label error";
+      trackingLabel.textContent = `Loeschen fehlgeschlagen: ${err.message}`;
+    } finally {
+      trackingDiscardBtn.disabled = false;
+    }
   });
 
   // Beim (Neu-)Laden pruefen, ob fuer diesen Kanal noch ein Upload verfolgt
