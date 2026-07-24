@@ -313,7 +313,14 @@ function getTracking(channel) {
 }
 
 function setTracking(channel, jobId) {
-  localStorage.setItem(TRACKING_KEY_PREFIX + channel, JSON.stringify({ jobId, startedAt: Date.now() }));
+  localStorage.setItem(TRACKING_KEY_PREFIX + channel, JSON.stringify({ jobId, startedAt: Date.now(), approved: false }));
+}
+
+function setTrackingApproved(channel, approved) {
+  const tracking = getTracking(channel);
+  if (!tracking) return;
+  tracking.approved = approved;
+  localStorage.setItem(TRACKING_KEY_PREFIX + channel, JSON.stringify(tracking));
 }
 
 function clearTrackingStorage(channel) {
@@ -402,6 +409,7 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
   const trackingRefreshBtn = zone.querySelector(".dz-tracking-refresh-btn");
   const trackingClearBtn = zone.querySelector(".dz-tracking-clear-btn");
   const trackingDiscardBtn = zone.querySelector(".dz-tracking-discard-btn");
+  const trackingApproveBtn = zone.querySelector(".dz-tracking-approve-btn");
   let pendingFile = null;
   let objectUrl = null;
   let trackingVideoObjectUrl = null;
@@ -425,6 +433,7 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
     trackingRefreshBtn.classList.add("hidden");
     trackingClearBtn.classList.add("hidden");
     trackingDiscardBtn.classList.add("hidden");
+    trackingApproveBtn.classList.add("hidden");
     trackingBox.classList.add("hidden");
     trackingLabel.className = "dz-tracking-label";
     trackingLabel.textContent = "";
@@ -435,6 +444,7 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
     if (!job) {
       trackingLabel.textContent = "Job nicht gefunden (evtl. entfernt/verworfen).";
       trackingDiscardBtn.classList.add("hidden");
+      trackingApproveBtn.classList.add("hidden");
       clearTrackingStorage(channel);
       stopPolling();
       return "unknown";
@@ -446,6 +456,7 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
       trackingRefreshBtn.classList.add("hidden");
       trackingClearBtn.classList.add("hidden");
       trackingDiscardBtn.classList.add("hidden");
+      trackingApproveBtn.classList.add("hidden");
       clearTrackingStorage(channel);
       stopPolling();
       setTimeout(resetTrackingUi, 4000);
@@ -461,8 +472,10 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
       trackingClearBtn.classList.remove("hidden");
       // Ab hier ist das Video schon extern bei YouTube/Facebook hochgeladen -
       // ein einfaches Loeschen des lokalen Jobs wuerde das nicht rueckgaengig
-      // machen, deshalb den Loeschen-Button nur VOR diesem Punkt anbieten.
+      // machen, deshalb den Loeschen-/Freigeben-Button nur VOR diesem Punkt
+      // anbieten.
       trackingDiscardBtn.classList.add("hidden");
+      trackingApproveBtn.classList.add("hidden");
       return "scheduled";
     }
 
@@ -476,17 +489,38 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
         }
       }
       const warning = await checkPublishWarning(jobId);
+      const tracking = getTracking(channel);
+      const approved = tracking?.approved === true;
       trackingRefreshBtn.classList.remove("hidden");
       trackingClearBtn.classList.remove("hidden");
-      trackingDiscardBtn.classList.remove("hidden");
+
       if (warning) {
+        // Freigegeben, aber fehlgeschlagen (z.B. API-Fehler) - Job bleibt
+        // auf "rendered" stehen (siehe publish_all.py), also erneut
+        // versuchen ODER verwerfen anbieten statt hilflos stehenzulassen.
         trackingLabel.className = "dz-tracking-label error";
-        trackingLabel.textContent = `❌ Fehler beim Veröffentlichen: ${warning.body.slice(0, 220)}`;
+        trackingLabel.textContent = `❌ Fehler beim Veröffentlichen: ${warning.body.slice(0, 220)} - erneut versuchen oder verwerfen.`;
+        trackingApproveBtn.classList.remove("hidden");
+        trackingApproveBtn.textContent = "✅ Erneut versuchen";
+        trackingDiscardBtn.classList.remove("hidden");
+        setTrackingApproved(channel, false);
         stopPolling();
         return "error";
       }
+
+      if (approved) {
+        trackingLabel.className = "dz-tracking-label";
+        trackingLabel.textContent = "⏳ Freigegeben - wird gerade veröffentlicht...";
+        trackingApproveBtn.classList.add("hidden");
+        trackingDiscardBtn.classList.add("hidden");
+        return "rendered";
+      }
+
       trackingLabel.className = "dz-tracking-label";
-      trackingLabel.textContent = "🎬 Fertig gerendert - wird gerade veröffentlicht...";
+      trackingLabel.textContent = "🎬 Fertig gerendert - schau es dir an. Gefällt es dir nicht, kannst du es löschen.";
+      trackingApproveBtn.classList.remove("hidden");
+      trackingApproveBtn.textContent = "✅ Freigeben & veröffentlichen";
+      trackingDiscardBtn.classList.remove("hidden");
       return "rendered";
     }
 
@@ -495,15 +529,15 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
     trackingRefreshBtn.classList.remove("hidden");
     trackingClearBtn.classList.remove("hidden");
     trackingDiscardBtn.classList.add("hidden");
+    trackingApproveBtn.classList.add("hidden");
     return "pending";
   }
 
-  function startTracking(jobId, { activePoll }) {
-    setTracking(channel, jobId);
+  // Setzt das Nachfragen fuer eine BESTEHENDE Tracking-Session fort (nach
+  // Seiten-Neuladen oder nach einer Freigabe) - fasst KEINEN neuen
+  // localStorage-Eintrag an, damit z.B. das approved-Flag erhalten bleibt.
+  function resumePolling(jobId, { activePoll }) {
     trackingBox.classList.remove("hidden");
-    trackingLabel.textContent = "⏳ Hochgeladen - warte auf Rendering...";
-    trackingRefreshBtn.classList.add("hidden");
-    trackingClearBtn.classList.remove("hidden");
 
     if (!activePoll) {
       pollOnce(jobId);
@@ -520,6 +554,16 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
     pollTimer = setTimeout(tick, TRACKING_POLL_INTERVAL_MS);
   }
 
+  // Startet eine NEUE Tracking-Session (frisch hochgeladenes Video) - legt
+  // den localStorage-Eintrag neu an (approved: false).
+  function startTracking(jobId, { activePoll }) {
+    setTracking(channel, jobId);
+    trackingLabel.textContent = "⏳ Hochgeladen - warte auf Rendering...";
+    trackingRefreshBtn.classList.add("hidden");
+    trackingClearBtn.classList.remove("hidden");
+    resumePolling(jobId, { activePoll });
+  }
+
   trackingRefreshBtn.addEventListener("click", async () => {
     const tracking = getTracking(channel);
     if (!tracking) return;
@@ -532,6 +576,43 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
     if (!confirm("Verfolgung dieses Uploads beenden? Der Job laeuft im Hintergrund trotzdem weiter.")) return;
     clearTrackingStorage(channel);
     resetTrackingUi();
+  });
+
+  trackingApproveBtn.addEventListener("click", async () => {
+    const tracking = getTracking(channel);
+    if (!tracking) return;
+    if (
+      !confirm(
+        "Dieses Video jetzt wirklich freigeben? Es wird dann zu YouTube und Facebook hochgeladen " +
+          "(geplant) und fuer Instagram vorgemerkt - das ist live und nicht mehr rueckgaengig zu machen."
+      )
+    ) {
+      return;
+    }
+    trackingApproveBtn.disabled = true;
+    trackingLabel.textContent = "Starte Veroeffentlichung...";
+    try {
+      const dispatchRes = await ghFetch("/actions/workflows/publish-job.yml/dispatches", {
+        method: "POST",
+        body: JSON.stringify({ ref: "main", inputs: { job_id: tracking.jobId } }),
+      });
+      if (!dispatchRes.ok) {
+        throw new Error(`Konnte nicht gestartet werden (HTTP ${dispatchRes.status})`);
+      }
+      setTrackingApproved(channel, true);
+      trackingApproveBtn.classList.add("hidden");
+      trackingDiscardBtn.classList.add("hidden");
+      trackingLabel.textContent = "⏳ Freigegeben - wird gerade veröffentlicht...";
+      // Aktives Nachfragen (re-)starten, falls das 4-Minuten-Fenster vom
+      // urspruenglichen Upload schon abgelaufen war - OHNE das approved-Flag
+      // zurueckzusetzen (siehe resumePolling vs. startTracking).
+      resumePolling(tracking.jobId, { activePoll: true });
+    } catch (err) {
+      trackingLabel.className = "dz-tracking-label error";
+      trackingLabel.textContent = `Freigabe fehlgeschlagen: ${err.message}`;
+    } finally {
+      trackingApproveBtn.disabled = false;
+    }
   });
 
   trackingDiscardBtn.addEventListener("click", async () => {
@@ -570,10 +651,11 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
   });
 
   // Beim (Neu-)Laden pruefen, ob fuer diesen Kanal noch ein Upload verfolgt
-  // wird (z.B. Tab war zwischenzeitlich im Hintergrund/geschlossen).
+  // wird (z.B. Tab war zwischenzeitlich im Hintergrund/geschlossen) - setzt
+  // die BESTEHENDE Session fort (approved-Flag bleibt erhalten).
   const existingTracking = getTracking(channel);
   if (existingTracking) {
-    startTracking(existingTracking.jobId, { activePoll: true });
+    resumePolling(existingTracking.jobId, { activePoll: true });
   }
 
   function resetPreview() {
