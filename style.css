@@ -464,6 +464,34 @@ input[type="password"], input[type="text"] {
 
 .unscheduled-item:last-child { border-bottom: none; }
 
+.unscheduled-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+}
+
+.unscheduled-actions .secondary-btn,
+.unscheduled-actions .primary-btn,
+.unscheduled-actions .danger-btn {
+  width: auto;
+  flex: 1;
+  margin-top: 0;
+  font-size: 0.85rem;
+  padding: 0.55rem 0.7rem;
+}
+
+.unscheduled-review {
+  margin-top: 0.5rem;
+}
+
+.unscheduled-review-video {
+  width: 100%;
+  border-radius: 10px;
+  background: #000;
+  max-height: 280px;
+  margin-bottom: 0.4rem;
+}
+
 /* --- Statistiken --- */
 
 .stats-header {

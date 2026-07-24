@@ -995,14 +995,120 @@ function renderUnscheduled() {
     return;
   }
   calEls.unscheduledList.innerHTML = unscheduled
-    .map(
-      (j) => `<div class="unscheduled-item">
-        <strong>${escapeHtml(CHANNEL_LABELS[j.channel] || j.channel)}</strong>: ${escapeHtml(j.topic)}
-        <span class="badge${j.status === "needs_review" ? " warn" : ""}">${escapeHtml(j.status)}</span>
-      </div>`
-    )
+    .map((j) => {
+      const header =
+        `<strong>${escapeHtml(CHANNEL_LABELS[j.channel] || j.channel)}</strong>: ${escapeHtml(j.topic)} ` +
+        `<span class="badge${j.status === "needs_review" ? " warn" : ""}">${escapeHtml(j.status)}</span>`;
+
+      if (j.status !== "rendered") {
+        // Nur "rendered" Jobs sind hier verwertbar (Vorschau + Freigeben/
+        // Loeschen moeglich) - pending_video/needs_review haben noch kein
+        // fertiges Video, dafuer gibt es hier nichts zu tun.
+        return `<div class="unscheduled-item">${header}</div>`;
+      }
+
+      // WICHTIG bei mehreren gleichzeitig wartenden Videos PRO KANAL: die
+      // Dropzone im oberen Bereich kann immer nur das zuletzt hochgeladene
+      // Video pro Kanal aktiv verfolgen (Freigeben/Loeschen). Hier in dieser
+      // Liste sind ALLE gerenderten, noch nicht freigegebenen Jobs einzeln
+      // erreichbar - unabhaengig davon, wie viele parallel warten.
+      return `<div class="unscheduled-item" data-job-id="${j.id}" data-channel="${j.channel}">
+        ${header}
+        <div class="unscheduled-actions">
+          <button class="secondary-btn unsched-preview-btn">▶ Video ansehen</button>
+        </div>
+        <div class="unscheduled-review hidden">
+          <video controls playsinline class="unscheduled-review-video"></video>
+          <div class="unscheduled-actions">
+            <button class="primary-btn unsched-approve-btn">✅ Freigeben &amp; veröffentlichen</button>
+            <button class="danger-btn unsched-discard-btn">🗑️ Video löschen</button>
+          </div>
+        </div>
+      </div>`;
+    })
     .join("");
 }
+
+// Event-Delegation auf dem Container (nicht pro Item), da die Liste bei
+// jedem renderUnscheduled() komplett neu erzeugt wird.
+calEls.unscheduledList.addEventListener("click", async (e) => {
+  const item = e.target.closest(".unscheduled-item[data-job-id]");
+  if (!item) return;
+  const jobId = item.dataset.jobId;
+  const channel = item.dataset.channel;
+
+  if (e.target.classList.contains("unsched-preview-btn")) {
+    const reviewBox = item.querySelector(".unscheduled-review");
+    const video = item.querySelector(".unscheduled-review-video");
+    e.target.disabled = true;
+    e.target.textContent = "Lade...";
+    const url = await fetchRenderedVideoUrl(jobId);
+    if (url) {
+      video.src = url;
+      reviewBox.classList.remove("hidden");
+      e.target.classList.add("hidden");
+    } else {
+      e.target.disabled = false;
+      e.target.textContent = "Video nicht gefunden - erneut versuchen";
+    }
+    return;
+  }
+
+  if (e.target.classList.contains("unsched-approve-btn")) {
+    if (
+      !confirm(
+        "Dieses Video jetzt wirklich freigeben? Es wird dann zu YouTube und Facebook hochgeladen " +
+          "(geplant) und fuer Instagram vorgemerkt - das ist live und nicht mehr rueckgaengig zu machen."
+      )
+    ) {
+      return;
+    }
+    e.target.disabled = true;
+    e.target.textContent = "Starte Veröffentlichung...";
+    try {
+      const dispatchRes = await ghFetch("/actions/workflows/publish-job.yml/dispatches", {
+        method: "POST",
+        body: JSON.stringify({ ref: "main", inputs: { job_id: jobId } }),
+      });
+      if (!dispatchRes.ok) throw new Error(`Konnte nicht gestartet werden (HTTP ${dispatchRes.status})`);
+      item.innerHTML =
+        `<strong>${escapeHtml(CHANNEL_LABELS[channel] || channel)}</strong>: ⏳ freigegeben, wird veröffentlicht...`;
+    } catch (err) {
+      e.target.disabled = false;
+      e.target.textContent = `Fehler: ${err.message}`;
+    }
+    return;
+  }
+
+  if (e.target.classList.contains("unsched-discard-btn")) {
+    if (
+      !confirm(
+        "Dieses gerenderte Video wirklich komplett loeschen? Der Job wird entfernt - fuer diesen " +
+          "Kanal muss danach neuer Content generiert werden."
+      )
+    ) {
+      return;
+    }
+    e.target.disabled = true;
+    e.target.textContent = "Lösche...";
+    try {
+      await deleteGithubFile(
+        `data/queue/rendered/${jobId}.mp4`,
+        `Verworfenes Video geloescht (${channel}, ueber Dashboard)`
+      );
+      await deleteGithubFile(
+        `data/queue/pending/${jobId}.json`,
+        `Verworfener Job geloescht (${channel}, ueber Dashboard)`
+      );
+      if (allJobs) allJobs = allJobs.filter((j) => j.id !== jobId);
+      item.remove();
+    } catch (err) {
+      e.target.disabled = false;
+      e.target.textContent = `Fehler: ${err.message}`;
+    }
+    return;
+  }
+});
 
 // --- Statistiken ---
 
