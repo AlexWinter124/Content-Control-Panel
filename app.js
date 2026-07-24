@@ -329,8 +329,13 @@ function clearTrackingStorage(channel) {
 
 // Ermittelt VOR dem Hochladen, welcher Job (FIFO, aeltester "pending_video"
 // Job dieses Kanals) das gerade hochgeladene Video abbekommen wird - das ist
-// dieselbe Zuordnungsregel wie render_video.py serverseitig verwendet.
-async function getOldestPendingJobId(channel) {
+// dieselbe Zuordnungsregel wie render_video.py serverseitig verwendet. Gibt
+// Thema/Titel mit zurueck, damit der Nutzer VOR dem Hochladen bestaetigen
+// kann, dass das wirklich das richtige Video fuer dieses Thema ist (die
+// Zuordnung selbst laeuft rein nach Reihenfolge, nicht nach Inhalt - bei
+// mehreren gleichzeitig wartenden Themen pro Kanal koennte man sich sonst
+// in der Reihenfolge vertun, ohne es zu merken).
+async function getOldestPendingJob(channel) {
   const listRes = await ghFetch("/contents/data/queue/pending");
   if (!listRes.ok) return null;
   const files = (await listRes.json())
@@ -341,7 +346,7 @@ async function getOldestPendingJobId(channel) {
     if (!fileRes.ok) continue;
     const data = await fileRes.json();
     const job = JSON.parse(decodeURIComponent(escape(atob(data.content))));
-    if (job.status === "pending_video") return job.id;
+    if (job.status === "pending_video") return { id: job.id, topic: job.topic, title: job.title };
   }
   return null;
 }
@@ -709,7 +714,34 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
 async function handleUpload(channel, file, statusEl, startTracking) {
   statusEl.className = "dz-status";
   statusEl.textContent = "Suche passenden Job...";
-  const targetJobId = await getOldestPendingJobId(channel).catch(() => null);
+  const targetJob = await getOldestPendingJob(channel).catch(() => null);
+  const targetJobId = targetJob?.id || null;
+
+  // Zuordnung ist reine Reihenfolge (FIFO), nicht inhaltlich - deshalb hier
+  // explizit bestaetigen lassen, WELCHES Thema dieses Video bekommt. Faengt
+  // ab, wenn bei mehreren gleichzeitig wartenden Themen pro Kanal die
+  // Reihenfolge durcheinandergeraet, ohne dass man es sonst merken wuerde.
+  if (targetJob) {
+    const ok = confirm(
+      `Dieses Video wird folgendem Thema zugeordnet:\n\n"${targetJob.topic}"\n(${targetJob.title})\n\n` +
+        "Passt das? Falls du ein Video fuer ein ANDERES Thema hochladen wolltest, abbrechen."
+    );
+    if (!ok) {
+      statusEl.className = "dz-status";
+      statusEl.textContent = "Abgebrochen.";
+      return;
+    }
+  } else {
+    const ok = confirm(
+      "Kein wartender Job fuer diesen Kanal gefunden! Trotzdem hochladen? Das Video wuerde dann " +
+        "liegen bleiben, bis 'Content generieren' fuer diesen Kanal ausgefuehrt wurde."
+    );
+    if (!ok) {
+      statusEl.className = "dz-status";
+      statusEl.textContent = "Abgebrochen.";
+      return;
+    }
+  }
 
   statusEl.textContent = `Lade "${file.name}" hoch...`;
 
