@@ -473,14 +473,22 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
       const when = job.publish_at ? fmtDateTime(job.publish_at) : "bald";
       trackingLabel.textContent =
         `✅ Hochgeladen zu YouTube & Facebook, geplant für ${when}. Instagram folgt automatisch kurz vorher.`;
-      trackingRefreshBtn.classList.remove("hidden");
-      trackingClearBtn.classList.remove("hidden");
       // Ab hier ist das Video schon extern bei YouTube/Facebook hochgeladen -
       // ein einfaches Loeschen des lokalen Jobs wuerde das nicht rueckgaengig
       // machen, deshalb den Loeschen-/Freigeben-Button nur VOR diesem Punkt
       // anbieten.
       trackingDiscardBtn.classList.add("hidden");
       trackingApproveBtn.classList.add("hidden");
+      // Deine Beteiligung ist hier zu Ende (Instagram folgt Tage/Stunden
+      // spaeter ganz automatisch, ohne dass die Seite offen sein muss) - Feld
+      // also wie bei "published" nach kurzer Erfolgsmeldung selbst leeren,
+      // statt bis zum tatsaechlichen Instagram-Post (evtl. naechster Tag)
+      // haengen zu bleiben.
+      trackingRefreshBtn.classList.add("hidden");
+      trackingClearBtn.classList.add("hidden");
+      clearTrackingStorage(channel);
+      stopPolling();
+      setTimeout(resetTrackingUi, 6000);
       return "scheduled";
     }
 
