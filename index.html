@@ -127,6 +127,13 @@
           <h2>📈 Statistiken</h2>
           <button id="refreshStatsBtn" class="icon-btn" title="Aktualisieren">🔄</button>
         </div>
+        <div class="range-select-label">Zeitraum (fuer Veraenderung unten &amp; Verlauf)</div>
+        <div class="range-select" id="rangeSelect">
+          <button class="range-btn" data-days="7">7T</button>
+          <button class="range-btn active" data-days="30">1M</button>
+          <button class="range-btn" data-days="182">6M</button>
+          <button class="range-btn" data-days="365">1J</button>
+        </div>
         <div id="statsUpdatedAt" class="status-text"></div>
         <div id="statsGrid" class="stats-grid"></div>
         <div id="statsStatus" class="status-text"></div>
@@ -134,12 +141,6 @@
 
       <section class="card trend-card">
         <h2>📡 Verlauf</h2>
-        <div class="range-select" id="rangeSelect">
-          <button class="range-btn" data-days="7">7T</button>
-          <button class="range-btn active" data-days="30">1M</button>
-          <button class="range-btn" data-days="182">6M</button>
-          <button class="range-btn" data-days="365">1J</button>
-        </div>
         <div id="trendCharts" class="trend-charts"></div>
       </section>
 
@@ -180,6 +181,6 @@
 
 </main>
 
-<script src="app.js?v=21"></script>
+<script src="app.js?v=22"></script>
 </body>
 </html>

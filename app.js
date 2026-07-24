@@ -1171,6 +1171,21 @@ function renderStats() {
 
   const fmt = (n) => (n === undefined || n === null ? "–" : n.toLocaleString("de-DE"));
 
+  const cutoff = Date.now() - selectedRangeDays * 24 * 60 * 60 * 1000;
+  const baseline = findBaselineSnapshot(cutoff);
+  const rangeLabel = RANGE_LABELS[selectedRangeDays] || `${selectedRangeDays}T`;
+
+  const deltaTile = (channel, metric) => {
+    if (!baseline || baseline === latest) return "";
+    const curVal = metric.accessor(latest.channels[channel]);
+    const baseVal = metric.accessor(baseline.channels[channel]);
+    if (curVal === undefined || curVal === null || baseVal === undefined || baseVal === null) return "";
+    const diff = curVal - baseVal;
+    const sign = diff > 0 ? "+" : "";
+    const cls = diff > 0 ? "positive" : diff < 0 ? "negative" : "neutral";
+    return `<div class="stat-tile-delta ${cls}">${sign}${diff.toLocaleString("de-DE")} (${rangeLabel})</div>`;
+  };
+
   statsEls.grid.innerHTML = Object.entries(latest.channels)
     .map(([channel, data]) => {
       const yt = data.youtube || {};
@@ -1178,17 +1193,29 @@ function renderStats() {
         <div class="stat-channel-block" data-channel="${channel}">
           <div class="stat-channel-name">${escapeHtml(CHANNEL_LABELS[channel] || channel)}</div>
           <div class="stat-tiles">
-            <div class="stat-tile"><div class="stat-tile-value">${fmt(yt.subscribers)}</div><div class="stat-tile-label">YT Abonnenten</div></div>
-            <div class="stat-tile"><div class="stat-tile-value">${fmt(yt.views)}</div><div class="stat-tile-label">YT Views</div></div>
+            <div class="stat-tile"><div class="stat-tile-value">${fmt(yt.subscribers)}</div><div class="stat-tile-label">YT Abonnenten</div>${deltaTile(channel, METRIC_DEFS[0])}</div>
+            <div class="stat-tile"><div class="stat-tile-value">${fmt(yt.views)}</div><div class="stat-tile-label">YT Views</div>${deltaTile(channel, METRIC_DEFS[1])}</div>
             <div class="stat-tile"><div class="stat-tile-value">${fmt(yt.videos)}</div><div class="stat-tile-label">YT Videos</div></div>
-            <div class="stat-tile"><div class="stat-tile-value">${fmt(data.facebook_followers)}</div><div class="stat-tile-label">FB Follower</div></div>
-            <div class="stat-tile"><div class="stat-tile-value">${fmt(data.instagram_followers)}</div><div class="stat-tile-label">IG Follower</div></div>
+            <div class="stat-tile"><div class="stat-tile-value">${fmt(data.facebook_followers)}</div><div class="stat-tile-label">FB Follower</div>${deltaTile(channel, METRIC_DEFS[2])}</div>
+            <div class="stat-tile"><div class="stat-tile-value">${fmt(data.instagram_followers)}</div><div class="stat-tile-label">IG Follower</div>${deltaTile(channel, METRIC_DEFS[3])}</div>
             <div class="stat-tile"><div class="stat-tile-value">${fmt(data.instagram_media_count)}</div><div class="stat-tile-label">IG Posts</div></div>
           </div>
         </div>
       `;
     })
     .join("");
+}
+
+function findBaselineSnapshot(cutoffMs) {
+  if (!statsHistory || statsHistory.length === 0) return null;
+  let candidate = null;
+  for (const s of statsHistory) {
+    const t = new Date(s.collected_at).getTime();
+    if (t <= cutoffMs && (!candidate || t > new Date(candidate.collected_at).getTime())) {
+      candidate = s;
+    }
+  }
+  return candidate || statsHistory[0];
 }
 
 statsEls.refreshBtn.addEventListener("click", async () => {
@@ -1249,13 +1276,16 @@ const METRIC_DEFS = [
   { key: "ig_followers", label: "Instagram Follower", accessor: (c) => c?.instagram_followers },
 ];
 
+const RANGE_LABELS = { 7: "7 Tage", 30: "1 Monat", 182: "6 Monate", 365: "1 Jahr" };
+
 let selectedRangeDays = 30;
 
-document.querySelectorAll(".range-btn").forEach((btn) => {
+document.querySelectorAll("#rangeSelect .range-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".range-btn").forEach((b) => b.classList.remove("active"));
+    document.querySelectorAll("#rangeSelect .range-btn").forEach((b) => b.classList.remove("active"));
     btn.classList.add("active");
     selectedRangeDays = Number(btn.dataset.days);
+    renderStats();
     renderTrendCharts();
   });
 });

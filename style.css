@@ -550,9 +550,26 @@ input[type="password"], input[type="text"] {
   margin-top: 0.15rem;
 }
 
+.stat-tile-delta {
+  font-size: 0.68rem;
+  font-weight: 600;
+  margin-top: 0.3rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-tile-delta.positive { color: var(--success); }
+.stat-tile-delta.negative { color: var(--error); }
+.stat-tile-delta.neutral { color: var(--text-dim); }
+
 /* --- Verlauf / Trend-Charts ("Jarvis"-HUD-Look) --- */
 
 .trend-card { position: relative; }
+
+.range-select-label {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin-bottom: 0.5rem;
+}
 
 .range-select {
   display: flex;
