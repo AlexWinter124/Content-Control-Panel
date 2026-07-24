@@ -372,16 +372,16 @@ async function deleteGithubFile(path, message) {
   return delRes.ok;
 }
 
+// Kanaele laufen unabhaengig voneinander (publish_all.py wartet nicht mehr
+// auf den jeweils anderen Kanal) - eine offene "Publish-Warnung"-Issue, die
+// diesen Job erwaehnt, ist daher immer ein echter Fehlschlag.
 async function checkPublishWarning(jobId) {
   const res = await ghFetch("/issues?state=open&sort=created&direction=desc&per_page=20");
   if (!res.ok) return null;
   const issues = await res.json();
   const match = issues.find((i) => i.title.startsWith("Publish-Warnung") && (i.body || "").includes(jobId));
   if (!match) return null;
-  return {
-    body: match.body || "",
-    isWaitingOnSibling: (match.body || "").includes("fuer folgende Kanaele fehlt"),
-  };
+  return { body: match.body || "" };
 }
 
 function fmtDateTime(iso) {
@@ -479,16 +479,14 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
       trackingRefreshBtn.classList.remove("hidden");
       trackingClearBtn.classList.remove("hidden");
       trackingDiscardBtn.classList.remove("hidden");
-      if (warning && !warning.isWaitingOnSibling) {
+      if (warning) {
         trackingLabel.className = "dz-tracking-label error";
         trackingLabel.textContent = `❌ Fehler beim Veröffentlichen: ${warning.body.slice(0, 220)}`;
         stopPolling();
         return "error";
       }
       trackingLabel.className = "dz-tracking-label";
-      trackingLabel.textContent = warning
-        ? "🎬 Fertig gerendert - wartet auf das Video des anderen Kanals, bevor beide zusammen veröffentlicht werden."
-        : "🎬 Fertig gerendert - wird gerade veröffentlicht...";
+      trackingLabel.textContent = "🎬 Fertig gerendert - wird gerade veröffentlicht...";
       return "rendered";
     }
 
