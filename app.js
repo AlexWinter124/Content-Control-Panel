@@ -412,6 +412,10 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
     trackingBox.classList.add("hidden");
     trackingLabel.className = "dz-tracking-label";
     trackingLabel.textContent = "";
+    // Das unsichtbare Datei-Feld deckt per CSS die ganze Dropzone ab - muss
+    // wieder aktiv werden, sobald die Tracking-Ansicht verschwindet, sonst
+    // kann man nach dem naechsten Reset kein neues Video mehr auswaehlen.
+    input.classList.remove("dz-input-inactive");
   }
 
   async function pollOnce(jobId) {
@@ -477,6 +481,11 @@ document.querySelectorAll(".dropzone").forEach((zone) => {
   function startTracking(jobId, { activePoll }) {
     setTracking(channel, jobId);
     trackingBox.classList.remove("hidden");
+    // Wie beim Vorschau-Feld: das unsichtbare Datei-Feld deckt sonst auch
+    // die Tracking-Buttons ab und faengt Klicks auf "Status aktualisieren"/
+    // "Zuruecksetzen" ab, statt sie auszuloesen - oeffnet stattdessen wieder
+    // den Datei-Explorer.
+    input.classList.add("dz-input-inactive");
     trackingLabel.textContent = "⏳ Hochgeladen - warte auf Rendering...";
     trackingRefreshBtn.classList.add("hidden");
     trackingClearBtn.classList.remove("hidden");
