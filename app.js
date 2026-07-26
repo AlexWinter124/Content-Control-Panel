@@ -338,15 +338,20 @@ async function getAllPendingVideoJobs(channel) {
   const files = (await listRes.json())
     .filter((f) => f.name.startsWith(`${channel}_`) && f.name.endsWith(".json"))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const jobs = [];
-  for (const file of files) {
-    const fileRes = await ghFetch(`/contents/${file.path}`);
-    if (!fileRes.ok) continue;
-    const data = await fileRes.json();
-    const job = JSON.parse(decodeURIComponent(escape(atob(data.content))));
-    if (job.status === "pending_video") jobs.push({ id: job.id, topic: job.topic, title: job.title });
-  }
-  return jobs;
+
+  // Parallel statt nacheinander abfragen - bei wachsender Job-Historie kann
+  // das sonst mehrere Sekunden dauern (ein Request pro Datei) und wirkt wie
+  // haengengeblieben, bevor der Auswahl-Dialog erscheint.
+  const results = await Promise.all(
+    files.map(async (file) => {
+      const fileRes = await ghFetch(`/contents/${file.path}`);
+      if (!fileRes.ok) return null;
+      const data = await fileRes.json();
+      const job = JSON.parse(decodeURIComponent(escape(atob(data.content))));
+      return job.status === "pending_video" ? { id: job.id, topic: job.topic, title: job.title } : null;
+    })
+  );
+  return results.filter(Boolean);
 }
 
 // Zeigt den Job-Auswahl-Dialog mit den uebergebenen Jobs (aeltestes zuerst
