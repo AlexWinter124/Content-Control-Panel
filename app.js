@@ -241,15 +241,15 @@ function renderPrompts(body) {
   const sections = body.split(/\n---\n/);
   const blocks = sections
     .map((section) => {
+      const jobIdMatch = section.match(/<!--\s*job_id:\s*(\S+)\s*-->/);
       const headerMatch = section.match(/##\s*([a-z0-9_]+):\s*(.+)/i);
-      const statusMatch = section.match(/\*\*Status:\s*`([^`]+)`/);
       const titleMatch = section.match(/\*\*Titel:\*\*\s*(.+)/);
       const promptMatch = section.match(/```\n([\s\S]*?)\n```/);
       if (!headerMatch || !promptMatch) return null;
       return {
+        jobId: jobIdMatch ? jobIdMatch[1] : null,
         channel: headerMatch[1],
         topic: headerMatch[2].trim(),
-        status: statusMatch ? statusMatch[1] : "pending_video",
         title: titleMatch ? titleMatch[1].trim() : "",
         prompt: promptMatch[1].trim(),
       };
@@ -260,9 +260,8 @@ function renderPrompts(body) {
   blocks.forEach((b, idx) => {
     const div = document.createElement("div");
     div.className = "prompt-block";
-    const warn = b.status !== "pending_video";
     div.innerHTML = `
-      <h3>${b.channel}: ${escapeHtml(b.topic)}${warn ? `<span class="badge warn">${escapeHtml(b.status)}</span>` : ""}</h3>
+      <h3>${b.channel}: ${escapeHtml(b.topic)}<span id="promptStatus${idx}" class="badge" style="display:none;"></span></h3>
       <div>${escapeHtml(b.title)}</div>
       <pre id="promptText${idx}">${escapeHtml(b.prompt)}</pre>
       <button class="copy-btn" data-idx="${idx}">Prompt kopieren</button>
@@ -281,6 +280,22 @@ function renderPrompts(body) {
   });
 
   els.promptsCard.classList.remove("hidden");
+
+  // Live-Status nachladen statt der eingefrorenen Momentaufnahme aus dem
+  // Issue-Text zu vertrauen - bleibt diese Karte (z.B. langlebiger Browser-
+  // Tab) laenger offen, waere sonst ein laengst hochgeladenes/gerendertes
+  // Thema hier faelschlich immer noch als "wartet auf Video" zu sehen.
+  blocks.forEach(async (b, idx) => {
+    if (!b.jobId) return;
+    const badge = document.getElementById(`promptStatus${idx}`);
+    const job = await fetchJobById(b.jobId).catch(() => null);
+    if (!job || !badge) return;
+    if (job.status !== "pending_video") {
+      badge.textContent = `bereits ${job.status} - kein Upload mehr noetig, siehe Dashboard`;
+      badge.classList.add("warn");
+      badge.style.display = "inline-block";
+    }
+  });
 }
 
 function escapeHtml(str) {
