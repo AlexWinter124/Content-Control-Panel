@@ -731,3 +731,41 @@ input[type="password"], input[type="text"] {
   padding: 1.5rem 0;
   text-align: center;
 }
+
+/* --- Job-Auswahl-Dialog (ersetzt reine FIFO-Zuordnung beim Video-Upload) --- */
+
+.job-picker-dialog {
+  background: var(--card-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  max-width: 420px;
+  width: 90vw;
+}
+
+.job-picker-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.job-picker-dialog h3 {
+  margin-top: 0;
+  font-size: 1.05rem;
+}
+
+#jobPickerSelect {
+  width: 100%;
+  padding: 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.9rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.job-picker-actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+}

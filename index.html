@@ -181,6 +181,16 @@
 
 </main>
 
-<script src="app.js?v=22"></script>
+<dialog id="jobPickerDialog" class="job-picker-dialog">
+  <h3>Welchem Thema gehört dieses Video?</h3>
+  <p class="status-text">Entscheidet, welcher Titel/Text ins Video gerendert wird - bitte genau prüfen.</p>
+  <select id="jobPickerSelect"></select>
+  <div class="job-picker-actions">
+    <button id="jobPickerCancelBtn" class="secondary-btn">Abbrechen</button>
+    <button id="jobPickerConfirmBtn" class="primary-btn">Bestätigen &amp; hochladen</button>
+  </div>
+</dialog>
+
+<script src="app.js?v=23"></script>
 </body>
 </html>
