@@ -1010,19 +1010,24 @@ async function fetchAllJobs() {
   if (!listRes.ok) return [];
   const files = (await listRes.json()).filter((f) => f.name.endsWith(".json"));
 
-  const jobs = [];
-  for (const file of files) {
-    try {
-      const fileRes = await ghFetch(`/contents/${file.path}`);
-      if (!fileRes.ok) continue;
-      const data = await fileRes.json();
-      const content = JSON.parse(decodeURIComponent(escape(atob(data.content))));
-      jobs.push(content);
-    } catch {
-      // einzelne kaputte/unlesbare Datei ueberspringen, Rest trotzdem anzeigen
-    }
-  }
-  return jobs;
+  // Parallel statt nacheinander - bei wachsender Job-Historie (aktuell
+  // ~48 Dateien) dauerte das sequenziell 15+ Sekunden und blockierte damit
+  // auch Kalender, "Noch nicht eingeplant" UND die Videos-pro-Tag-
+  // Markierung, die im Dashboard-Ladevorgang erst DANACH drankommen.
+  const results = await Promise.all(
+    files.map(async (file) => {
+      try {
+        const fileRes = await ghFetch(`/contents/${file.path}`);
+        if (!fileRes.ok) return null;
+        const data = await fileRes.json();
+        return JSON.parse(decodeURIComponent(escape(atob(data.content))));
+      } catch {
+        // einzelne kaputte/unlesbare Datei ueberspringen, Rest trotzdem anzeigen
+        return null;
+      }
+    })
+  );
+  return results.filter(Boolean);
 }
 
 function renderCalendar() {
@@ -1064,8 +1069,16 @@ function renderCalendar() {
   calEls.grid.innerHTML = html;
 }
 
+// "Noch nicht eingeplant" = alles, was weder schon einen Sendetermin hat
+// (status "scheduled") noch schon komplett fertig ist (status "published").
+// Nicht ueber "kein publish_at-Feld" pruefen - ein paar sehr alte Jobs aus
+// der Zeit vor der aktuellen Architektur sind zwar laengst "published",
+// haben aber nie ein publish_at bekommen und wuerden sonst faelschlich
+// hier als offen auftauchen (2026-07-27 live beobachtet).
+const DONE_STATUSES = new Set(["scheduled", "published"]);
+
 function renderUnscheduled() {
-  const unscheduled = (allJobs || []).filter((j) => !j.publish_at);
+  const unscheduled = (allJobs || []).filter((j) => !DONE_STATUSES.has(j.status));
   if (unscheduled.length === 0) {
     calEls.unscheduledList.textContent = "Alles eingeplant - nichts Offenes.";
     return;
