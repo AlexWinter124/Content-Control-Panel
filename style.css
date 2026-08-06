@@ -596,6 +596,21 @@ input[type="password"], input[type="text"] {
   border-color: var(--accent);
 }
 
+.fill-mode-block {
+  margin-bottom: 0.9rem;
+}
+
+.fill-mode-label {
+  font-weight: 500;
+  margin-bottom: 0.4rem;
+}
+
+.fill-mode-select .range-btn {
+  flex: 1;
+  white-space: normal;
+  line-height: 1.2;
+}
+
 .trend-charts {
   display: flex;
   flex-direction: column;

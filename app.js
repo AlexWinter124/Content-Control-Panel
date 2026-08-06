@@ -68,6 +68,7 @@ function showSetup(message) {
 function showMain() {
   els.setupScreen.classList.add("hidden");
   els.mainScreen.classList.remove("hidden");
+  loadFillMode();
 }
 
 async function init() {
@@ -966,6 +967,96 @@ videosPerDayEls.buttons.forEach((btn) => {
     } catch (err) {
       videosPerDayEls.status.textContent = `Fehler: ${err.message}`;
     }
+  });
+});
+
+// --- Planungs-Modus (fill_mode je Kanal) ---
+// "extend" (Standard): naechstes Video kommt an den naechsten komplett
+// freien Tag, immer weiter in die Zukunft (kein Horizont-Limit mehr, seit
+// Facebook ueber den Entwurf+Cron-Ansatz laeuft statt natives Scheduling).
+// "compress": naechstes Video wird stattdessen auf einen bereits
+// verplanten Tag draufgepackt (von heute aus chronologisch, ein Layer nach
+// dem anderen ueber ALLE bereits verplanten Tage verteilt), bis multi_slots
+// pro Tag ausgeschoepft ist - es wird dabei NIE ein neuer, bisher unbenutzter
+// Tag angefangen. Siehe next_available_slot() in scripts/publish_all.py.
+
+const FILL_MODE_CHANNELS = ["briefww2", "unspoken_civilization"];
+const fillModeStatusEl = document.getElementById("fillModeStatus");
+
+function fillModeButtons(channel) {
+  return document.querySelectorAll(`.fill-mode-block[data-channel="${channel}"] .range-btn`);
+}
+
+function highlightFillMode(channel, mode) {
+  fillModeButtons(channel).forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.mode === mode);
+  });
+}
+
+async function loadFillMode() {
+  if (!scheduleConfigCache) {
+    scheduleConfigCache = await fetchScheduleConfig().catch(() => null);
+  }
+  if (!scheduleConfigCache) return;
+  FILL_MODE_CHANNELS.forEach((channel) => {
+    const overrides = (scheduleConfigCache.content.channel_overrides || {})[channel] || {};
+    highlightFillMode(channel, overrides.fill_mode || "extend");
+  });
+}
+
+FILL_MODE_CHANNELS.forEach((channel) => {
+  fillModeButtons(channel).forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const mode = btn.dataset.mode;
+      if (!scheduleConfigCache) {
+        scheduleConfigCache = await fetchScheduleConfig().catch(() => null);
+      }
+      if (!scheduleConfigCache) {
+        fillModeStatusEl.textContent = "Konnte config/schedule.json nicht laden.";
+        return;
+      }
+      const allOverrides = scheduleConfigCache.content.channel_overrides || {};
+      const currentOverrides = allOverrides[channel] || {};
+      if ((currentOverrides.fill_mode || "extend") === mode) return; // schon aktiv
+
+      const label = mode === "compress" ? "Von hinten auffüllen" : "Weiter in die Zukunft";
+      const channelLabel = channel === "briefww2" ? "@BriefWW2" : "@UnspokenCivilization";
+      if (!confirm(`Planungs-Modus für ${channelLabel} auf "${label}" umstellen?`)) {
+        return;
+      }
+
+      fillModeStatusEl.textContent = "Speichere...";
+      const updatedContent = {
+        ...scheduleConfigCache.content,
+        channel_overrides: {
+          ...allOverrides,
+          [channel]: { ...currentOverrides, fill_mode: mode },
+        },
+      };
+      const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(updatedContent, null, 2))));
+
+      try {
+        const res = await ghFetch("/contents/config/schedule.json", {
+          method: "PUT",
+          body: JSON.stringify({
+            message: `fill_mode fuer ${channel} auf ${mode} gesetzt (ueber Control Panel)`,
+            content: encoded,
+            sha: scheduleConfigCache.sha,
+            branch: "main",
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        scheduleConfigCache = { content: updatedContent, sha: data.content.sha };
+        highlightFillMode(channel, mode);
+        fillModeStatusEl.textContent = `✓ ${channelLabel}: Planungs-Modus auf "${label}" gesetzt.`;
+      } catch (err) {
+        fillModeStatusEl.textContent = `Fehler: ${err.message}`;
+      }
+    });
   });
 });
 
