@@ -69,7 +69,6 @@ function showMain() {
   els.setupScreen.classList.add("hidden");
   els.mainScreen.classList.remove("hidden");
   loadFillMode();
-  loadPendingVideoJobs();
 }
 
 async function init() {
@@ -149,6 +148,33 @@ els.generateBtn.addEventListener("click", async () => {
     els.generateStatus.textContent = "Bitte mindestens einen Kanal auswaehlen.";
     return;
   }
+  const channelList = channels === "both" ? ["briefww2", "unspoken_civilization"] : [channels];
+
+  // Alte, noch offene Jobs (noch kein Video hochgeladen) fuer die gewaehlten
+  // Kanaele werden vor dem Generieren automatisch entfernt, statt sich
+  // unbegrenzt anzusammeln und irgendwann unauffindbar zu werden (Nutzer-
+  // Entscheidung 2026-08-07, ersetzt die vorherige manuelle "Offene Themen"-
+  // Liste). Nur EINE Bestaetigung falls tatsaechlich was geloescht wuerde.
+  els.generateStatus.textContent = "Pruefe alte offene Jobs...";
+  const staleJobs = (await Promise.all(channelList.map((c) => getAllPendingVideoJobs(c)))).flat();
+  if (staleJobs.length > 0) {
+    const summary = staleJobs.map((j) => `- ${j.topic}`).join("\n");
+    if (
+      !confirm(
+        `${staleJobs.length} noch offene(s) Thema/Themen ohne Video wird/werden dabei geloescht:\n\n${summary}\n\nFortfahren?`
+      )
+    ) {
+      els.generateStatus.textContent = "";
+      return;
+    }
+    els.generateStatus.textContent = "Loesche alte offene Jobs...";
+    for (const job of staleJobs) {
+      await deleteGithubFile(
+        `data/queue/pending/${job.id}.json`,
+        "Alter offener Job vor neuer Generierung geloescht (ueber Control Panel)"
+      );
+    }
+  }
 
   cancelRequested = false;
   activeRunId = null;
@@ -183,7 +209,6 @@ els.generateBtn.addEventListener("click", async () => {
 
     els.generateStatus.textContent = "Fertig!";
     renderPrompts(issue.body);
-    loadPendingVideoJobs();
   } catch (err) {
     if (!cancelRequested) els.generateStatus.textContent = `Fehler: ${err.message}`;
   } finally {
@@ -307,88 +332,6 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-// --- Offene Themen (wartet auf Video) ---
-// Anders als renderPrompts() (die nur das EINE zuletzt erzeugte Issue liest,
-// und damit aeltere, noch offene Themen aus frueheren Generieren-Laeufen aus
-// den Augen verliert) liest dies IMMER direkt aus den echten Job-Dateien -
-// zeigt also zuverlaessig ALLE "pending_video"-Jobs, egal wie alt (Nutzer-
-// Feedback 2026-08-07: Prompts zu alten offenen Jobs waren nicht mehr
-// auffindbar).
-
-const pendingVideosCard = document.getElementById("pendingVideosCard");
-const pendingVideosContainer = document.getElementById("pendingVideosContainer");
-
-async function loadPendingVideoJobs() {
-  const perChannel = await Promise.all(
-    ["briefww2", "unspoken_civilization"].map(async (channel) => {
-      const jobs = await getAllPendingVideoJobs(channel).catch(() => []);
-      return jobs.map((j) => ({ ...j, channel }));
-    })
-  );
-  renderPendingVideoJobs(perChannel.flat());
-}
-
-function renderPendingVideoJobs(jobs) {
-  if (jobs.length === 0) {
-    pendingVideosCard.classList.add("hidden");
-    pendingVideosContainer.innerHTML = "";
-    return;
-  }
-  pendingVideosCard.classList.remove("hidden");
-  pendingVideosContainer.innerHTML = jobs
-    .map(
-      (j, idx) => `
-    <div class="prompt-block" data-job-id="${j.id}" data-channel="${j.channel}">
-      <h3>${escapeHtml(CHANNEL_LABELS[j.channel] || j.channel)}: ${escapeHtml(j.topic)}</h3>
-      <div>${escapeHtml(j.title)}</div>
-      <pre id="pendingPromptText${idx}">${escapeHtml(j.veo_prompt || "(kein Veo-Prompt gespeichert)")}</pre>
-      <div class="prompt-actions">
-        <button class="copy-btn" data-idx="${idx}">Prompt kopieren</button>
-        <button class="danger-btn pending-discard-btn">🗑️ Job löschen</button>
-      </div>
-    </div>`
-    )
-    .join("");
-
-  pendingVideosContainer.querySelectorAll(".copy-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const text = document.getElementById(`pendingPromptText${btn.dataset.idx}`).textContent;
-      navigator.clipboard.writeText(text).then(() => {
-        btn.textContent = "Kopiert!";
-        setTimeout(() => (btn.textContent = "Prompt kopieren"), 1500);
-      });
-    });
-  });
-
-  pendingVideosContainer.querySelectorAll(".pending-discard-btn").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const block = btn.closest("[data-job-id]");
-      const jobId = block.dataset.jobId;
-      const channel = block.dataset.channel;
-      if (
-        !confirm(
-          `Job "${jobId}" wirklich loeschen? Es wurde noch kein Video dafuer hochgeladen - das Thema ist danach komplett weg.`
-        )
-      ) {
-        return;
-      }
-      btn.disabled = true;
-      btn.textContent = "Lösche...";
-      try {
-        await deleteGithubFile(
-          `data/queue/pending/${jobId}.json`,
-          `Offener Job ohne Video geloescht (${channel}, ueber Control Panel)`
-        );
-        block.remove();
-        if (!pendingVideosContainer.children.length) pendingVideosCard.classList.add("hidden");
-      } catch (err) {
-        btn.disabled = false;
-        btn.textContent = `Fehler: ${err.message}`;
-      }
-    });
-  });
-}
-
 // --- Video-Upload ---
 
 const TRACKING_KEY_PREFIX = "bww2_tracking_";
@@ -448,9 +391,7 @@ async function getAllPendingVideoJobs(channel) {
       if (!fileRes.ok) return null;
       const data = await fileRes.json();
       const job = JSON.parse(decodeURIComponent(escape(atob(data.content))));
-      return job.status === "pending_video"
-        ? { id: job.id, topic: job.topic, title: job.title, veo_prompt: job.veo_prompt }
-        : null;
+      return job.status === "pending_video" ? { id: job.id, topic: job.topic, title: job.title } : null;
     })
   );
   return results.filter(Boolean);
