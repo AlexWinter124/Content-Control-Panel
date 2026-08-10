@@ -514,13 +514,28 @@ async function fetchRenderedVideoUrl(jobId) {
 // Loescht eine Datei im Repo ueber die Contents API (braucht deren aktuelle
 // sha, deshalb erst GET dann DELETE). Gibt true zurueck bei Erfolg oder wenn
 // die Datei ohnehin schon nicht (mehr) existiert.
+//
+// Holt die sha bewusst ueber ein VERZEICHNIS-Listing (/contents/<ordner>)
+// statt ueber die Einzeldatei (/contents/<pfad>): bei der Einzeldatei-
+// Variante liefert die Contents API bei groesseren Dateien (z.B. gerenderte
+// MP4s) statt sauberem JSON teils den rohen Datei-Inhalt zurueck - "ftypis"
+// (MP4-Datei-Signatur) landet dann direkt im JSON.parse() und crasht mit
+// "Unexpected token" (Bug gefunden 2026-08-07). Die Verzeichnis-Liste
+// enthaelt die sha ebenfalls, aber nie eingebetteten Datei-Inhalt.
 async function deleteGithubFile(path, message) {
-  const getRes = await ghFetch(`/contents/${path}`);
-  if (!getRes.ok) return true;
-  const data = await getRes.json();
+  const slashIdx = path.lastIndexOf("/");
+  const dir = path.substring(0, slashIdx);
+  const filename = path.substring(slashIdx + 1);
+
+  const listRes = await ghFetch(`/contents/${dir}`);
+  if (!listRes.ok) return true;
+  const files = await listRes.json();
+  const file = Array.isArray(files) ? files.find((f) => f.name === filename) : null;
+  if (!file) return true;
+
   const delRes = await ghFetch(`/contents/${path}`, {
     method: "DELETE",
-    body: JSON.stringify({ message, sha: data.sha, branch: "main" }),
+    body: JSON.stringify({ message, sha: file.sha, branch: "main" }),
   });
   return delRes.ok;
 }
