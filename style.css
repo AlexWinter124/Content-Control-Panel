@@ -327,6 +327,12 @@ input[type="password"], input[type="text"] {
   margin: 0.5rem 0;
 }
 
+.prompt-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .copy-btn {
   font-size: 0.85rem;
   padding: 0.5rem 0.9rem;
